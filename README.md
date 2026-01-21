@@ -84,12 +84,18 @@ summary: "문서 허브 운영 규칙 및 결정 트리 보강"
 
 ---
 
-## 6. ADR(Architecture Decision Record) 운영 원칙
+## 6. ADR (Architecture Decision Record) 운영 원칙
 
-- ADR은 **되돌리기 싫은 핵심 결정**만 기록한다.
-- 모든 ADR은 `adr/ADR-XXX-*.md` 형식을 따른다.
-- 설계가 변경될 경우 기존 ADR은 삭제하지 않고:
-  - `Status: Superseded` 로 표시한다.
+현재 이 저장소는 **설계 진행 단계**이며(서비스 런칭 전), 의사결정이 계속 바뀔 수 있다.  
+따라서 ADR은 **지금 단계에서는 작성/유지하지 않고 비워둔다.**
+
+- 설계 결정의 단일 진실 소스(Single Source of Truth)는 `docs/design-decisions-log.md` 이다.
+- `adr/` 디렉토리는 유지하되, **기본적으로 비워둔다**(placeholder).
+- 향후 설계가 안정화되면(예: 개발 착수/런칭 직전/런칭 후),
+  `docs/design-decisions-log.md`에서 핵심 결정만 추려 ADR로 **추출**한다.
+- ADR을 생성하는 경우에도 기존 기록을 삭제하지 않고,
+  `design-decisions-log`는 계속 “결정 이력의 정본”으로 유지한다.
+
 
 ---
 
