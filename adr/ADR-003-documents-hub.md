@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-엔티티별 문서 테이블(cost_documents, payment_documents 등)은
+엔티티별 문서 테이블(비용/지급 등 엔티티별 전용 문서 테이블)은
 확장성과 중복 관리 문제를 야기했다.
 
 ## Decision
