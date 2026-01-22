@@ -8,36 +8,48 @@
  * ======================================================================= */
 
 
+/* -----------------------------------------------------------------------
+ * NOTE (ANNOTATION)
+ * - 본 파일은 DDL 자체가 최우선 정본(Source of Truth)이다.
+ * - schema-policy-and-naming.md 등에 존재하는 코드/상태/값 설명 중,
+ *   실행/운영에 필요한 항목은 가능한 한 본 DDL에 라인 주석/블록 주석으로도 중복 기록한다.
+ * - 기존 CREATE 문 및 SQL COMMENT는 축소/요약/삭제하지 않는다.
+ * - 본 파일 내 TODO/FIXME 주석은 스키마 설계 검토를 위한 메모이며, DDL 정본 변경은 별도 합의가 필요하다.
+ * ----------------------------------------------------------------------- */
+
+
 -- ======================================================================
 -- TABLE: departments
 -- DESC : 부서(조직 단위)
+-- NOTE : 조직은 그룹웨어에서 관리할꺼고 이건 분리될 수 있다. 지금은 둔다.
 -- ======================================================================
 CREATE TABLE departments (
   d_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '부서 PK',
-  name VARCHAR(100) NOT NULL COMMENT '부서명',
-  manager_a_sn BIGINT UNSIGNED NULL COMMENT '부서 매니저(팀장) 담당자 PK',
+  d_name VARCHAR(100) NOT NULL COMMENT '부서명',
+  d_manager_a_sn BIGINT UNSIGNED NULL COMMENT '부서 매니저(팀장) 담당자 PK',
   d_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   d_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (d_sn),
-  UNIQUE KEY uk_departments_name (name)
+  UNIQUE KEY uk_departments_name (d_name)
 ) COMMENT='부서(조직 단위)';
 
 
 -- ======================================================================
 -- TABLE: assignees
 -- DESC : 업무 담당자(직원/협업 담당자 공용)
+-- NOTE : 조직은 그룹웨어에서 관리하지만, DB Relation을 위해 간단히 엔티티 레코드를 유지한다. 그룹웨어 -> 사내인증 -> assignees, email을 키값으로 한다. email 바뀌면 수정 필요
 -- ======================================================================
 CREATE TABLE assignees (
   a_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '담당자 PK',
   d_sn BIGINT UNSIGNED NULL COMMENT '부서 PK',
-  name VARCHAR(100) NOT NULL COMMENT '담당자 이름',
-  email VARCHAR(255) NULL COMMENT '이메일',
-  is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '재직/활성 여부(1=활성, 0=비활성)',
+  a_name VARCHAR(32) NOT NULL COMMENT '담당자 이름',
+  a_email VARCHAR(128) NULL COMMENT '이메일',
+  a_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '재직/활성 여부(1=활성, 0=비활성)',
   a_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   a_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (a_sn),
   KEY idx_assignees_d_sn (d_sn),
-  KEY idx_assignees_email (email),
+  KEY idx_assignees_email (a_email),
   CONSTRAINT fk_assignees_departments
     FOREIGN KEY (d_sn) REFERENCES departments(d_sn)
 ) COMMENT='업무 담당자(직원/협업 담당자 공용)';
@@ -51,12 +63,12 @@ CREATE TABLE parties (
   pt_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '업체/기관 PK',
   party_type ENUM('CUSTOMER','VENDOR','FORWARDER','BROKER','OTHER')
     NOT NULL COMMENT '업체 유형(ENUM) | CUSTOMER:고객사, VENDOR:공급사/판매사, FORWARDER:포워더/물류, BROKER:관세사/중개, OTHER:기타',
-  name VARCHAR(255) NOT NULL COMMENT '업체명',
+  name VARCHAR(128) NOT NULL COMMENT '업체명',
   country_code CHAR(2) NULL COMMENT '국가코드(ISO 2자리, 예: KR, US)',
-  biz_no VARCHAR(50) NULL COMMENT '사업자번호/등록번호',
-  contact_name VARCHAR(100) NULL COMMENT '담당자명',
-  contact_phone VARCHAR(50) NULL COMMENT '연락처',
-  contact_email VARCHAR(255) NULL COMMENT '이메일',
+  biz_no VARCHAR(16) NULL COMMENT '사업자번호/등록번호',
+  contact_name VARCHAR(32) NULL COMMENT '담당자명',
+  contact_phone VARCHAR(16) NULL COMMENT '연락처',
+  contact_email VARCHAR(128) NULL COMMENT '이메일',
   pt_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pt_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (pt_sn),
@@ -67,34 +79,34 @@ CREATE TABLE parties (
 -- ======================================================================
 -- TABLE: projects
 -- DESC : 프로젝트(=계약)
+-- NOTE : p_sn 대신 코드를 쓰고 싶으면 P-[YYYY]-[p_sn] 을 쓰기
 -- ======================================================================
 CREATE TABLE projects (
   p_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '프로젝트(=계약 통합) PK',
-  project_code VARCHAR(50) NOT NULL COMMENT '내부 관리 코드(유니크)',
-  project_name VARCHAR(255) NOT NULL COMMENT '프로젝트명',
-  project_type ENUM('TENDER','DIRECT','FRAME')
+  p_name VARCHAR(128) NOT NULL COMMENT '프로젝트명',
+  p_type ENUM('TENDER','DIRECT','FRAME')
     NOT NULL COMMENT '프로젝트 유형(ENUM) | TENDER:입찰(공공/민간), DIRECT:직접계약, FRAME:기간/다건 계약(프레임/콜오프)',
-  customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객사 PK(parties)',
-  contract_no VARCHAR(100) NULL COMMENT '계약서 번호(외부 식별자, 계약 전 NULL 가능)',
-  signed_at DATE NULL COMMENT '계약 체결일(계약 전 NULL 가능)',
-  contract_amount DECIMAL(18,2) NULL COMMENT '계약 총액(계약 전 NULL 가능)',
-  currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
+  p_customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객사 PK(parties)',
+  p_contract_no VARCHAR(32) NULL COMMENT '계약서 번호(외부 식별자, 계약 전 NULL 가능)',
+  p_signed_at DATE NULL COMMENT '계약 체결일(계약 전 NULL 가능)',
+  p_contract_amount DECIMAL(18,2) NULL COMMENT '계약 총액(계약 전 NULL 가능)',
+  p_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
   p_status ENUM('PRE_CONTRACT','ACTIVE','CLOSED','CANCELLED')
     NOT NULL COMMENT '프로젝트 상태(ENUM) | PRE_CONTRACT:계약전/입찰검토, ACTIVE:진행, CLOSED:종료, CANCELLED:취소',
-  current_manager_a_sn BIGINT UNSIGNED NOT NULL COMMENT '현재 프로젝트 담당자 PK(assignees)',
-  started_at DATETIME NULL COMMENT '프로젝트 시작일시(업무 이벤트)',
-  ended_at DATETIME NULL COMMENT '프로젝트 종료일시(업무 이벤트)',
+  p_a_sn BIGINT UNSIGNED NOT NULL COMMENT '현재 프로젝트 담당자 PK(assignees)',
+  p_started_at DATETIME NULL COMMENT '프로젝트 시작일시(업무 이벤트)',
+  p_ended_at DATETIME NULL COMMENT '프로젝트 종료일시(업무 이벤트)',
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (p_sn),
-  UNIQUE KEY uk_projects_project_code (project_code),
+  UNIQUE KEY uk_projects_project_code (p_code),
   KEY idx_projects_customer_pt_sn (customer_pt_sn),
-  KEY idx_projects_manager (current_manager_a_sn),
+  KEY idx_projects_manager (p_a_sn),
   KEY idx_projects_status (p_status),
   CONSTRAINT fk_projects_customer
     FOREIGN KEY (customer_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_projects_manager
-    FOREIGN KEY (current_manager_a_sn) REFERENCES assignees(a_sn)
+    FOREIGN KEY (p_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='프로젝트(=계약)';
 
 
@@ -105,14 +117,15 @@ CREATE TABLE projects (
 CREATE TABLE orders (
   o_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문서 PK',
   p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects)',
-  order_no VARCHAR(100) NULL COMMENT '주문서 번호(외부/내부 식별용)',
-  order_type ENUM('CONTRACT_ORDER','PRE_CONTRACT_ORDER')
+  o_no VARCHAR(32) NULL COMMENT '주문서 번호(외부/내부 식별용)',
+  o_type ENUM('CONTRACT_ORDER','PRE_CONTRACT_ORDER')
     NOT NULL DEFAULT 'CONTRACT_ORDER'
     COMMENT '주문서 유형(ENUM) | CONTRACT_ORDER:실제 주문서, PRE_CONTRACT_ORDER:계약전(입찰검토/사전견적) 용도',
   o_status ENUM('OPEN','IN_PROGRESS','CLOSED','CANCELLED')
     NOT NULL COMMENT '주문서 상태(ENUM) | OPEN:오픈, IN_PROGRESS:진행, CLOSED:종결, CANCELLED:취소',
-  ordered_at DATETIME NULL COMMENT '주문서 생성/접수 일시(업무 이벤트)',
-  memo VARCHAR(500) NULL COMMENT '메모',
+  o_ordered_at DATETIME NULL COMMENT '주문서 생성/접수 일시(업무 이벤트)',
+  o_due_date DATE NULL COMMENT '납품 예정일(업무 이벤트)',
+  o_note VARCHAR(500) NULL COMMENT '메모',
   o_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   o_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (o_sn),
@@ -126,24 +139,57 @@ CREATE TABLE orders (
 -- ======================================================================
 -- TABLE: order_lines
 -- DESC : 주문라인(고객 요구/납품 약속 단위)
+-- web_* 공고 사이트에 게시된 주문항목 정보
+-- doc_* 공고 문서상에 기록된 주문항목 정보
+-- final_* 담당자가 확인한 실제 납품해야할 주문항목 정보
 -- ======================================================================
+
+/* -----------------------------------------------------------------------
+ * TABLE: order_lines
+ * PURPOSE
+ * - 공공조달 계약에서 '요구된 납품 조건'은 출처별로 상이/오류 가능하므로 3벌을 계약의 일부로 보존한다.
+ *   1) web_*   : 공고 사이트 웹페이지에 게시된 값(원문/게시 기준)
+ *   2) doc_*   : 공고 첨부/문서에 기재된 값(문서 기준)
+ *   3) final_* : 내부 담당자가 최종 확인·합의한 값(실제 납품/견적/발주 기준)
+ * - 최종 실행(견적/RFQ/PO/납품)은 기본적으로 final_* 값을 기준으로 한다.
+ * - web_* / doc_* / final_*는 '서로 모순될 수 있으며', 분쟁/정산/감사 시 근거로 활용한다.
+ *
+ * NOTE
+ * - 본 테이블은 3벌 데이터를 한 레코드에 고정 저장한다(출처가 유동적이지 않음).
+ * - 문서/웹 원문 파일 자체는 documents + document_links로 연결하는 것을 권장한다.
+ * ----------------------------------------------------------------------- */
+
 CREATE TABLE order_lines (
   ol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문라인 PK',
   o_sn BIGINT UNSIGNED NOT NULL COMMENT '주문서 PK(orders)',
-  line_no INT NOT NULL COMMENT '주문서 내 라인 번호',
-  requirement_name VARCHAR(255) NOT NULL COMMENT '요구 품목명(예: 십자 드라이버)',
-  requirement_spec_json JSON NULL COMMENT '요구 규격/조건(자유형 JSON)',
-  qty_required DECIMAL(14,3) NOT NULL COMMENT '요구 수량(납품 약속 수량)',
-  ol_default_g_sn BIGINT UNSIGNED NULL COMMENT '기본 수급 기성상품 PK(goods) | 99% 케이스에서 사용',
-  unit VARCHAR(20) NULL COMMENT '단위(예: EA, SET)',
-  unit_price_sales DECIMAL(18,2) NULL COMMENT '판매 단가(고객에 납품 단가, 모르면 NULL)',
+  ol_line_no INT NOT NULL COMMENT '주문서 내 라인 번호',
+
+  web_item_name VARCHAR(128) NOT NULL COMMENT '(사이트상) 요구 품목명(예: 십자 드라이버)',
+  web_item_spec JSON NULL COMMENT '(사이트상) 요구 규격/조건(자유형 JSON)',
+  web_item_qty DECIMAL(14,3) NOT NULL COMMENT '(사이트상) 요구 수량(납품 약속 수량)',
+  web_item_unit VARCHAR(20) NULL COMMENT '(사이트상) 단위(예: EA, SET)',
+  web_unit_price DECIMAL(18,2) NULL COMMENT '(사이트상) 판매 단가(고객에 납품 단가, 모르면 NULL)',
+
+  doc_item_name VARCHAR(128) NOT NULL COMMENT '(문서상) 요구 품목명(예: 십자 드라이버)',
+  doc_item_spec JSON NULL COMMENT '(문서상) 요구 규격/조건(자유형 JSON)',
+  doc_item_qty DECIMAL(14,3) NOT NULL COMMENT '(문서상) 요구 수량(납품 약속 수량)',
+  doc_item_unit VARCHAR(20) NULL COMMENT '(문서상) 단위(예: EA, SET)',
+  doc_unit_price DECIMAL(18,2) NULL COMMENT '(문서상) 판매 단가(고객에 납품 단가, 모르면 NULL)',
+
+  final_item_name VARCHAR(128) NOT NULL COMMENT '(검토된) 요구 품목명(예: 십자 드라이버)',
+  final_item_spec JSON NULL COMMENT '(검토된) 요구 규격/조건(자유형 JSON)',
+  final_item_qty DECIMAL(14,3) NOT NULL COMMENT '(검토된) 요구 수량(납품 약속 수량)',
+  final_item_unit VARCHAR(20) NULL COMMENT '(검토된) 단위(예: EA, SET)',
+  final_unit_price DECIMAL(18,2) NULL COMMENT '(검토된) 판매 단가(고객에 납품 단가, 모르면 NULL)',
+
+  ol_default_g_sn BIGINT UNSIGNED NULL COMMENT '기본 수급 상품 PK(goods) | 99% 케이스에서 사용',
   ol_status ENUM('OPEN','IN_PROGRESS','DELIVERED','CANCELLED')
     NOT NULL COMMENT '라인 상태(ENUM) | OPEN:오픈, IN_PROGRESS:진행, DELIVERED:납품완료, CANCELLED:취소',
-  due_date DATE NULL COMMENT '납품 예정일(업무 이벤트)',
+  ol_due_date DATE NULL COMMENT '납품 예정일(업무 이벤트)',
   ol_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ol_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ol_sn),
-  UNIQUE KEY uk_order_lines_order_line_no (o_sn, line_no),
+  UNIQUE KEY uk_order_lines_order_line_no (o_sn, ol_line_no),
   KEY idx_order_lines_o_sn (o_sn),
   KEY idx_order_lines_status (ol_status),
   KEY idx_order_lines_default_g (ol_default_g_sn),
@@ -161,21 +207,28 @@ CREATE TABLE order_lines (
 CREATE TABLE order_line_overrides (
   olo_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문라인 예외(override) PK',
   ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines)',
-  override_type ENUM('SPLIT','SUBSTITUTE','ADD_ON','BUNDLE')
+  olo_type ENUM('SPLIT','SUBSTITUTE','ADD_ON','BUNDLE')
     NOT NULL COMMENT '예외 유형(ENUM) | SPLIT:분할구매, SUBSTITUTE:대체품, ADD_ON:추가구매, BUNDLE:조합구성품',
-  g_sn BIGINT UNSIGNED NULL COMMENT '대상 기성상품 PK(goods) | BUNDLE/SUBSTITUTE 등에서 사용',
-  qty DECIMAL(14,3) NOT NULL COMMENT 'override 수량',
-  note VARCHAR(500) NULL COMMENT '사유/메모',
+
+  olo_item_name VARCHAR(128) NOT NULL COMMENT '(override) 요구 품목명(예: 십자 드라이버)',
+  olo_item_spec JSON NULL COMMENT '(override) 요구 규격/조건(자유형 JSON)',
+  olo_item_qty DECIMAL(14,3) NOT NULL COMMENT '(override) 요구 수량(납품 약속 수량)',
+  olo_item_unit VARCHAR(20) NULL COMMENT '(override) 단위(예: EA, SET)',
+  olo_unit_price DECIMAL(18,2) NULL COMMENT '(override) 판매 단가(고객에 납품 단가, 모르면 NULL)',
+
+  olo_g_sn BIGINT UNSIGNED NULL COMMENT '대상 상품 PK(goods) | BUNDLE/SUBSTITUTE 등에서 사용',
+
+  olo_note VARCHAR(500) NULL COMMENT '사유/메모',
   olo_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   olo_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (olo_sn),
   KEY idx_olo_ol (ol_sn),
   KEY idx_olo_g (g_sn),
-  KEY idx_olo_type (override_type),
+  KEY idx_olo_type (olo_type),
   CONSTRAINT fk_olo_ol
     FOREIGN KEY (ol_sn) REFERENCES order_lines(ol_sn),
   CONSTRAINT fk_olo_g
-    FOREIGN KEY (g_sn) REFERENCES goods(g_sn)
+    FOREIGN KEY (olo_g_sn) REFERENCES goods(g_sn)
 ) COMMENT='주문라인 희소 케이스(분할/대체/추가/조합) 지원';
 
 
@@ -183,29 +236,69 @@ CREATE TABLE order_line_overrides (
 -- TABLE: sourcing_cases
 -- DESC : 수급 케이스(주문라인 단위 공통 컨테이너)
 -- ======================================================================
+
+/* -----------------------------------------------------------------------
+ * TABLE: sourcing_cases
+ * PURPOSE
+ * - 주문항목(order_lines) 단위의 '수급 실행 케이스'이다.
+ * - 케이스는 수급 방식(DOMESTIC/OVERSEAS/IN_HOUSE)별로 생성될 수 있으며, 기본은 1 order_line : 1+ sourcing_cases.
+ * - sc_status는 '단계 진행'이 아니라, '책임/수락/거절에 따른 지속 상태'를 표현한다.
+ *
+ * STATUS MODEL (minimal)
+ * - OPEN             : 담당자 미확정(대기열)
+ * - SELF_ASSIGNED    : 프로젝트 담당자가 직접 처리(인수)
+ * - ASSIGNING        : 특정 담당자에게 위임 요청(수락/거절 대기)
+ * - ASSIGNEE_WORKING : 요청 받은 담당자가 수락하여 처리 중
+ * - CANCELLED        : 취소
+ *
+ * FIELD USAGE
+ * - sc_owner_a_sn      : '현재 책임자' (OPEN에서는 NULL 가능)
+ * - sc_requested_a_sn  : 위임 요청 대상(ASSIGNING에서 사용)
+ * - sc_requested_at    : 요청 시각
+ * - sc_accepted_at     : 수락 시각
+ * - sc_rejected_at     : 거절 시각
+ * - 상세 액션 이력은 audit/activity_logs로 남긴다(별도 이벤트 테이블 신설 없음).
+ * ----------------------------------------------------------------------- */
+
 CREATE TABLE sourcing_cases (
   sc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수급 케이스 PK',
   ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines) (1:1)',
-  sourcing_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
+  sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
     NOT NULL COMMENT '수급 방식(ENUM) | DOMESTIC:국내구매, OVERSEAS:해외구매, IN_HOUSE:자체제작',
-  sourcing_assignee_a_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 수행 담당자 PK(assignees) | 협업 담당자 또는 프로젝트 담당자',
-  sc_status ENUM('OPEN','IN_PROGRESS','READY_TO_HANDOFF','HANDED_OFF','CANCELLED')
-    NOT NULL COMMENT '수급 케이스 상태(ENUM) | OPEN:오픈, IN_PROGRESS:진행, READY_TO_HANDOFF:인계준비, HANDED_OFF:인계완료, CANCELLED:취소',
-  handed_off_to_a_sn BIGINT UNSIGNED NULL COMMENT '인계 대상자 PK(assignees) | 보통 프로젝트 담당자',
-  handed_off_at DATETIME NULL COMMENT '인계일시(업무 이벤트)',
-  summary VARCHAR(500) NULL COMMENT '진행 요약(담당자 메모)',
+  sc_assignee_a_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 수행 담당자 PK(assignees) | 협업 담당자 또는 프로젝트 담당자',
+  sc_status VARCHAR(32) NOT NULL COMMENT
+    '수급 케이스의 현재 처리 상태를 나타내는 코드이다.
+    - OPEN               : 담당자 미확정 상태이다. 누구도 인수하지 않았으며, 담당자 지정 대기열에 해당한다.
+    - SELF_ASSIGNED      : 케이스 생성자/프로젝트 담당자가 본인이 직접 처리하기로 인수한 상태이다.
+    - ASSIGNING          : 특정 담당자에게 처리를 요청한 상태이다. 요청 대상의 수락/거절을 기다린다.
+    - ASSIGNEE_WORKING   : 요청 받은 담당자가 수락하여 실제로 처리 중인 상태이다.
+    - CANCELLED          : 케이스가 취소된 상태이다.',
+  sc_owner_a_sn BIGINT UNSIGNED NULL COMMENT
+    '현재 이 수급 케이스를 실제로 처리할 책임(소유권)을 가진 담당자를 식별하는 외래키이다. OPEN 상태에서는 NULL일 수 있다.',
+
+  sc_requested_a_sn BIGINT UNSIGNED NULL COMMENT
+    '담당자에게 처리를 요청했을 때, 요청 대상 담당자를 식별하는 외래키이다. sc_status=ASSIGNING일 때 주로 사용된다.',
+
+  sc_requested_at DATETIME NULL COMMENT
+    '담당자 지정 요청이 발생한 시각이다. sc_status가 ASSIGNING으로 전환된 시점을 기록한다.',
+
+  sc_accepted_at DATETIME NULL COMMENT
+    '요청 대상 담당자가 요청을 수락한 시각이다. sc_status가 ASSIGNEE_WORKING으로 전환된 시점을 기록한다.',
+
+  sc_rejected_at DATETIME NULL COMMENT
+    '요청 대상 담당자가 요청을 거절한 시각이다. 거절 시 sc_status는 일반적으로 OPEN으로 되돌아간다.',
+
+  sc_note VARCHAR(500) NULL COMMENT '진행 요약(담당자 메모)',
   sc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   sc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (sc_sn),
   UNIQUE KEY uk_sourcing_cases_ol_sn (ol_sn),
-  KEY idx_sourcing_cases_assignee (sourcing_assignee_a_sn),
+  KEY idx_sourcing_cases_assignee (sc_assignee_a_sn),
   KEY idx_sourcing_cases_status (sc_status),
   CONSTRAINT fk_sourcing_cases_order_lines
     FOREIGN KEY (ol_sn) REFERENCES order_lines(ol_sn),
   CONSTRAINT fk_sourcing_cases_assignee
-    FOREIGN KEY (sourcing_assignee_a_sn) REFERENCES assignees(a_sn),
-  CONSTRAINT fk_sourcing_cases_handoff_to
-    FOREIGN KEY (handed_off_to_a_sn) REFERENCES assignees(a_sn)
+    FOREIGN KEY (sc_assignee_a_sn) REFERENCES assignees(a_sn),
 ) COMMENT='수급 케이스(주문라인 단위 공통 컨테이너)';
 
 
@@ -216,9 +309,9 @@ CREATE TABLE sourcing_cases (
 CREATE TABLE domestic_cases (
   dc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '국내 수급 케이스 PK(시도 인스턴스)',
   sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
-  is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '현재 활성 케이스 여부(1=활성, 0=비활성/과거시도)',
-  closed_at DATETIME NULL COMMENT '종결일시(전환/중단 시, 업무 이벤트)',
-  note VARCHAR(500) NULL COMMENT '비고',
+  dc_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '현재 활성 케이스 여부(1=활성, 0=비활성/과거시도)',
+  dc_closed_at DATETIME NULL COMMENT '종결일시(전환/중단 시, 업무 이벤트)',
+  dc_note VARCHAR(500) NULL COMMENT '비고',
   dc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   dc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (dc_sn),
@@ -234,16 +327,16 @@ CREATE TABLE domestic_cases (
 -- ======================================================================
 CREATE TABLE goods (
   g_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '기성상품 PK',
-  manufacturer_name VARCHAR(64) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
-  goods_name VARCHAR(255) NOT NULL COMMENT '상품명(카탈로그명)',
-  model_no VARCHAR(100) NULL COMMENT '모델번호',
-  spec_json JSON NULL COMMENT '규격/옵션(JSON)',
-  note VARCHAR(500) NULL COMMENT '비고',
+  g_manufacturer_name VARCHAR(64) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
+  g_name VARCHAR(128) NOT NULL COMMENT '상품명(카탈로그명)',
+  g_model_no VARCHAR(32) NULL COMMENT '모델번호',
+  g_spec_json JSON NULL COMMENT '규격/옵션(JSON)',
+  g_note VARCHAR(500) NULL COMMENT '비고',
   g_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   g_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (g_sn),
-  KEY idx_goods_name (goods_name),
-  KEY idx_goods_manufacturer_name (manufacturer_name)
+  KEY idx_goods_name (g_name),
+  KEY idx_goods_manufacturer_name (g_manufacturer_name)
 ) COMMENT='기성상품(재사용 카탈로그/품목 마스터)';
 
 
@@ -254,15 +347,14 @@ CREATE TABLE goods (
 CREATE TABLE overseas_cases (
   oc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '해외 수급 케이스 PK(시도 인스턴스)',
   sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
-  is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '현재 활성 케이스 여부(1=활성, 0=비활성/과거시도)',
-  closed_at DATETIME NULL COMMENT '종결일시(전환/중단 시, 업무 이벤트)',
-  incoterms VARCHAR(20) NULL COMMENT '인코텀즈',
-  currency CHAR(3) NULL COMMENT '거래 통화',
-  etd DATE NULL COMMENT '출항 예정일(업무 이벤트)',
-  eta DATE NULL COMMENT '도착 예정일(업무 이벤트)',
-  tracking_no VARCHAR(100) NULL COMMENT '트래킹 번호',
-  customs_status VARCHAR(50) NULL COMMENT '통관 상태',
-  note VARCHAR(500) NULL COMMENT '비고',
+  oc_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '현재 활성 케이스 여부(1=활성, 0=비활성/과거시도)',
+  oc_closed_at DATETIME NULL COMMENT '종결일시(전환/중단 시, 업무 이벤트)',
+  -- incoterms는 견적/발주서에 넣는게 맞다. 나중에 필요하다고 하면 넣기.
+  -- oc_incoterms VARCHAR(20) NULL COMMENT '인코텀즈',
+  oc_currency CHAR(3) NULL COMMENT '거래 통화',
+  oc_etd DATE NULL COMMENT '출항 예정일(업무 이벤트). 출항/도착은 shipments 같아 보이지만, 계약조건일 수도 있으니 여기 넣자. 이건 예상/계약 조건일 정도의 의미로 사용하기',
+  oc_eta DATE NULL COMMENT '도착 예정일(업무 이벤트)',
+  oc_note VARCHAR(500) NULL COMMENT '비고',
   oc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   oc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (oc_sn),
@@ -270,30 +362,6 @@ CREATE TABLE overseas_cases (
   CONSTRAINT fk_overseas_cases_sc
     FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn)
 ) COMMENT='해외 수급 케이스(시도 인스턴스)';
-
-
--- ======================================================================
--- TABLE: overseas_steps
--- DESC : 해외 수급 단계(체크리스트)
--- ======================================================================
-CREATE TABLE overseas_steps (
-  os_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '해외 단계 PK',
-  oc_sn BIGINT UNSIGNED NOT NULL COMMENT '해외 케이스 PK(overseas_cases)',
-  step_code ENUM('RFQ','SUPPLIER_SELECTED','PAYMENT','SHIPMENT','CUSTOMS','DELIVERY','QC')
-    NOT NULL COMMENT '단계 코드(ENUM) | RFQ:견적요청, SUPPLIER_SELECTED:업체선정, PAYMENT:결제, SHIPMENT:선적, CUSTOMS:통관, DELIVERY:인도, QC:검수',
-  os_status ENUM('TODO','DOING','DONE','BLOCKED','CANCELLED')
-    NOT NULL COMMENT '단계 상태(ENUM) | TODO:대기, DOING:진행, DONE:완료, BLOCKED:이슈, CANCELLED:취소',
-  started_at DATETIME NULL COMMENT '시작일시(업무 이벤트)',
-  done_at DATETIME NULL COMMENT '완료일시(업무 이벤트)',
-  note VARCHAR(500) NULL COMMENT '비고',
-  os_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  os_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-  PRIMARY KEY (os_sn),
-  KEY idx_overseas_steps_oc (oc_sn),
-  KEY idx_overseas_steps_status (os_status),
-  CONSTRAINT fk_overseas_steps_oc
-    FOREIGN KEY (oc_sn) REFERENCES overseas_cases(oc_sn)
-) COMMENT='해외 수급 단계(체크리스트)';
 
 
 -- ======================================================================
@@ -439,7 +507,7 @@ CREATE TABLE rfqs (
   ship_from_country CHAR(2) NULL COMMENT '발송국가(ISO-3166-1 alpha-2) | 예: CN, US',
   ship_to_country CHAR(2) NULL COMMENT '도착국가(ISO-3166-1 alpha-2) | 보통 KR',
 
-  memo VARCHAR(500) NULL COMMENT 'RFQ 메모(헤더 단위)',
+  rfq_note VARCHAR(500) NULL COMMENT 'RFQ 메모(헤더 단위)',
 
   rfq_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   rfq_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -578,7 +646,7 @@ CREATE TABLE purchase_orders (
   ship_from_country CHAR(2) NULL COMMENT '발송국가(ISO-3166-1 alpha-2) | 예: CN, US',
   ship_to_country CHAR(2) NULL COMMENT '도착국가(ISO-3166-1 alpha-2) | 보통 KR',
 
-  memo VARCHAR(500) NULL COMMENT '발주 메모(헤더)',
+  po_note VARCHAR(500) NULL COMMENT '발주 메모(헤더)',
 
   po_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   po_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',

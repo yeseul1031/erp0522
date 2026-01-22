@@ -65,6 +65,7 @@ CREATE TABLE shipments (
   po_sn BIGINT UNSIGNED NULL COMMENT '관련 발주서 PK(purchase_orders) | 발주와 1:1이 아닐 수 있어 NULL 허용(분할/병합)',
   vendor_pt_sn BIGINT UNSIGNED NULL COMMENT '운송사/포워더/택배사 등 업체 PK(parties) | 내부 수행이면 NULL 가능',
 
+  sh_customs_status VARCHAR(16) NULL COMMENT '통관 상태. milestone의 최신 값 비정규화 or 정책레벨에서 지정한 값을 넣자. 구체화 필요.',
   delivery_method VARCHAR(40) NULL COMMENT '물류 방식(텍스트) | 권장: PICKUP_BY_LOGISTICS, SELLER_SHIP_TO_COMPANY, SELLER_SHIP_TO_CUSTOMER, FORWARDER_MANAGED, COURIER, FREIGHT_TRUCK | 필요 시 확장 가능',
   trade_terms VARCHAR(20) NULL COMMENT '인도조건(Incoterms 등) | 권장: EXW,FCA,FOB,CFR,CIF,CPT,CIP,DAP,DPU,DDP | 국내는 보통 NULL',
   ship_from_country CHAR(2) NULL COMMENT '출발국가(ISO-3166-1 alpha-2) | 예: CN, US',
@@ -114,7 +115,7 @@ CREATE TABLE shipment_lines (
 
 -- ======================================================================
 -- TABLE: shipment_milestones
--- DESC : 운송 이벤트/마일스톤(추적/증빙)
+-- DESC : 운송 이벤트/마일스톤(추적/증빙) 트래킹 이력 자동 수집이 안되니, 국내 해외 관계 없이 중요한 이벤트나 비용 청구 목적의 기록용으로 쓴다.
 -- ======================================================================
 CREATE TABLE shipment_milestones (
   sm_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '운송 이벤트 PK',
@@ -136,7 +137,7 @@ CREATE TABLE shipment_milestones (
   KEY idx_shipment_milestones_occurred (occurred_at),
 
   CONSTRAINT fk_shipment_milestones_sh FOREIGN KEY (sh_sn) REFERENCES shipments(sh_sn)
-) COMMENT='운송 이벤트/마일스톤(추적/증빙)';
+) COMMENT='운송 이벤트/마일스톤(추적/증빙) 트래킹 이력 자동 수집이 안되니, 국내 해외 관계 없이 중요한 이벤트나 비용 청구 목적의 기록용으로 쓴다.';
 
 
 -- ======================================================================

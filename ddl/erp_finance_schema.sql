@@ -35,6 +35,50 @@ CREATE TABLE costs (
 
 
 -- ======================================================================
+-- TABLE: bank_accounts
+-- DESC : 거래처 수취 계좌(국내/해외 겸용, 송금 입력용 주소록)
+-- ======================================================================
+CREATE TABLE bank_accounts (
+  bk_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '거래처 계좌 PK (ERP 전용 약어)',
+  pt_sn BIGINT UNSIGNED NOT NULL COMMENT '거래처 FK: parties.pt_sn (이 계좌의 소유/수취 대상)',
+
+  bk_bank_name VARCHAR(80) NOT NULL COMMENT '은행명(국문/영문 모두 가능)',
+  bk_account_number VARCHAR(80) NOT NULL COMMENT '계좌번호(문자열; 해외/IBAN 등 포함 가능)',
+  bk_account_holder_name VARCHAR(120) NOT NULL COMMENT '예금주/계좌명(상대방 계좌명)',
+
+  bk_contact VARCHAR(80) NULL COMMENT '연락처(옵션)',
+  bk_account_label VARCHAR(80) NULL COMMENT '계좌 별칭(옵션; 예: 주계좌/세금계산서용/긴급용)',
+  bk_memo VARCHAR(255) NULL COMMENT '메모(옵션)',
+
+  bk_is_primary TINYINT(1) NOT NULL DEFAULT 0 COMMENT '주 계좌 여부(0/1)',
+  bk_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '사용중 여부(0/1)',
+
+  -- 해외 송금 대응(필요 시에만 입력)
+  bk_country_code CHAR(2) NULL COMMENT '국가코드(ISO 3166-1 alpha-2; 예: KR, US)',
+  bk_currency_code CHAR(3) NULL COMMENT '통화코드(ISO 4217; 예: KRW, USD)',
+  bk_swift_bic VARCHAR(20) NULL COMMENT 'SWIFT/BIC(해외송금; 예: BOFAUS3N)',
+  bk_iban VARCHAR(34) NULL COMMENT 'IBAN(해외; EU 등)',
+  bk_routing_number VARCHAR(32) NULL COMMENT 'Routing/ABA/Sort code 등 지역별 은행코드',
+  bk_bank_address VARCHAR(200) NULL COMMENT '은행 주소(해외송금 시 필요할 수 있음)',
+  bk_intermediary_bank_info VARCHAR(255) NULL COMMENT '중개은행 정보(옵션)',
+
+  bk_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 시각',
+  bk_updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정 시각',
+
+  PRIMARY KEY (bk_sn),
+
+  KEY idx_bk_pt (pt_sn, bk_is_active, bk_is_primary),
+  KEY idx_bk_bank_account (bk_bank_name, bk_account_number),
+
+  UNIQUE KEY uk_bk_pt_bank_acct (pt_sn, bk_bank_name, bk_account_number)
+
+  -- FK는 운영정책에 따라 선택
+  -- ,CONSTRAINT fk_bank_accounts_pt FOREIGN KEY (pt_sn) REFERENCES parties(pt_sn)
+) COMMENT='거래처 수취 계좌(국내/해외 겸용, 송금 입력용 주소록)';
+
+
+
+-- ======================================================================
 -- TABLE: payments
 -- DESC : 지급/결제(카드/이체/현금) 원장
 -- ======================================================================
@@ -45,6 +89,8 @@ CREATE TABLE payments (
   pay_status ENUM('PENDING','PAID','CANCELLED')
     NOT NULL DEFAULT 'PAID' COMMENT '지급 상태(ENUM) | PENDING:대기, PAID:지급완료, CANCELLED:취소',
   payee_pt_sn BIGINT UNSIGNED NULL COMMENT '정산/지급 상대 업체 PK(parties) | 네이버/쿠팡 등 정산 주체, 비정형은 예약된 party 사용',
+  payee_bk_sn BIGINT UNSIGNED NULL COMMENT '실제 이체 실행 시 사용된 거래처의 수취 계좌를 식별하는 외래키이다. 실제 지급 결과 기준의 계좌를 기록한다.'
+
   paid_at DATETIME NOT NULL COMMENT '지급 완료일시(업무 이벤트)',
   amount DECIMAL(18,2) NOT NULL COMMENT '지급 금액',
   currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
@@ -323,6 +369,7 @@ CREATE TABLE payables (
   pbl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청/지급단위 PK(payable)',
 
   payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 대상 업체 PK(parties) | 송금/정산 상대',
+  payee_bk_sn BIGINT UNSIGNED NULL COMMENT '지급 예정인 금액을 수취할 거래처의 계좌를 식별하는 외래키이다. 지급 승인 시점에 지정된 수취 계좌를 의미한다.',
 
   payable_status ENUM('CREATED','APPROVED','ON_HOLD','PARTIALLY_PAID','PAID','CANCELLED')
     NOT NULL DEFAULT 'CREATED'

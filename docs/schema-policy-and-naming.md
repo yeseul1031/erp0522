@@ -146,10 +146,18 @@ summary: "스키마 정책 + 네이밍 규칙 + 문서/버전 운영 대전제 �
   - override가 있으면 override를 우선 전개하여 RFQ/PO 라인을 만든다.
   - override가 없으면 default goods를 사용한다.
 
-### A-5. 수급 케이스(Sourcing Case)
-- 수급 케이스는 `sourcing_cases(sc_sn)`가 “현재 유효” 값을 가진다.
-- 유효한 수급 방식은 동시에 1개로 제한하며, 변경 이력은 로그/감사 테이블로 남긴다.
-- RFQ/PO 라인과의 배정은 allocation 테이블에서 `sc_sn`으로 묶는다.
+### A-5. 수급 케이스(Sourcing Case) 및 다중 발주 검증 규칙
+- 하나의 `sourcing_case`(국내)는 여러 개의 `purchase_orders`로 분할 발주될 수 있다.
+- 이 경우, 해당 `sourcing_case`에 속한 모든 `po_lines.qty`의 합은
+  - 해당 `sourcing_case`의 목표 수량(있는 경우), 또는
+  - 연결된 `order_line.qty`
+  와 논리적으로 일치해야 한다.
+- 본 규칙은 DB 제약(FK/UNIQUE)으로 강제하지 않으며,
+  운영 검증 및 리포트 레벨에서 점검한다.
+- `sourcing_cases`는 발주 단위가 아니라, 수급 전략 및 관리 단위이다.
+- 실제 구매 실행은 `purchase_orders`에서 이루어지며, 하나의 케이스에 여러 PO가 연결될 수 있다.
+
+
 
 ### A-6. 후보군 비교(드라이버/CPU/모니터 등)
 - 후보 비교의 그룹 키는 `goods`가 아니라 **`order_line` 또는 `sc_sn`**이다.
@@ -636,32 +644,51 @@ COMMENT '주문서 상태 | OPEN:진행중, CLOSED:종결, CANCELLED:취소'
 | 문서-엔티티 연결 | `document_links` | `dl` | `dl_sn` |
 | 납품 | `deliveries` | `dv` | `dv_sn` |
 
+| 부서 | `departments` | `d` | `d_sn` |
+| 품목(상품) | `goods` | `g` | `g_sn` |
+
+| RFQ(견적요청) | `rfqs` | `rfq` | `rfq_sn` |
+| RFQ 라인 | `rfq_lines` | `rfql` | `rfql_sn` |
+| RFQ 배정(allocations) | `rfq_allocations` | `rfqa` | `rfqa_sn` |
+
+| 발주서(PO) | `purchase_orders` | `po` | `po_sn` |
+| 발주 라인 | `po_lines` | `pol` | `pol_sn` |
+| 발주 배정(allocations) | `po_allocations` | `poa` | `poa_sn` |
+| 발주-비용 연결 | `po_cost_links` | `pcl` | `pcl_sn` |
+
+| 선적/배송(Shipment) | `shipments` | `sh` | `sh_sn` |
+| 선적 라인 | `shipment_lines` | `shl` | `shl_sn` |
+| 선적 마일스톤 | `shipment_milestones` | `sm` | `sm_sn` |
+| 재고 단위 | `inventory_units` | `iu` | `iu_sn` |
+
+| 납품 라인 | `delivery_lines` | `dvl` | `dvl_sn` |
+| 납품 요청 | `delivery_requests` | `dr` | `dr_sn` |
+| 납품 요청 라인 | `delivery_request_lines` | `drl` | `drl_sn` |
+| 납품 요청 제안 | `delivery_request_proposals` | `drp` | `drp_sn` |
+
+| 물류 작업(Job) | `logistics_jobs` | `lj` | `lj_sn` |
+| 물류 작업 정차지(Stop) | `logistics_job_stops` | `ljs` | `ljs_sn` |
+| 물류 작업 라인 | `logistics_job_lines` | `ljl` | `ljl_sn` |
+
+| 제작 BOM 라인 | `inhouse_bom_lines` | `ibl` | `ibl_sn` |
+| 제작 작업지시 | `inhouse_work_orders` | `iwo` | `iwo_sn` |
+
+| 환율 | `fx_rates` | `fx` | `fx_sn` |
+| 비용 환율 적용 | `cost_fx_applications` | `cfxa` | `cfxa_sn` |
+
+| 인보이스 | `invoices` | `inv` | `inv_sn` |
+| 인보이스 라인 | `invoice_lines` | `invl` | `invl_sn` |
+
+| 거래처 수 계좌 | `bank_accounts` | `bk` | `bk_sn` |
+| 지급대상(Payable) | `payables` | `pbl` | `pbl_sn` |
+| 지급대상-비용 배정 | `payable_cost_allocations` | `pbca` | `pbca_sn` |
+| 지급대상-인보이스 배정 | `payable_invoice_allocations` | `pbia` | `pbia_sn` |
+| 지급-지급대상 배정 | `payment_payable_allocations` | `ppa` | `ppa_sn` |
+
+| 활동 로그 | `activity_logs` | `al` | `al_sn` |
+| 감사 변경 로그 | `audit_changes` | `ac` | `ac_sn` |
+
 > 새 테이블 추가 시: “이미 사용 중인 약어”와 충돌하지 않게 정하고, 이 표를 업데이트한다.
-
-### 8.2 테이블 prefix 패턴 (문서 도메인 포함)
-
-자주 쓰는 엔티티 prefix는 다음과 같다.
-
-- `p_` : projects
-- `o_` : orders
-- `ol_` : order_lines
-- `olo_` : order_line_overrides
-- `sc_` : sourcing_cases
-
-(레거시 분리형 RFQ/PO — 보존)
-- `rfq_` / `rfql_` / `rfqa_` : rfqs / rfq_lines / rfq_allocations
-- `po_` / `pol_` / `poa_` : purchase_orders / po_lines / po_allocations
-- `rfq_` / `rfql_` / `rfqa_` : rfqs / rfq_lines / rfq_allocations
-- `po_` / `pol_` / `poa_` : purchase_orders / po_lines / po_allocations
-
-(재무)
-- `ct_` : costs
-- `ca_` : cost_allocations
-- `pay_` : payments
-- `pyl_` : payment_lines
-- `doc_` : documents
-- `dl_` : document_links
-
 
 
 #### 8.3 레거시(폐지): documents
