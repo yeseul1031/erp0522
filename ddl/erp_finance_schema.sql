@@ -83,6 +83,10 @@
 -- ======================================================================
 -- TABLE: costs
 -- DESC : 비용(원장)
+-- NOTE : costs는 '비용 발생' 원장이다(사유/금액/발생일). 귀속/안분은 cost_allocations로만 관리한다(원장은 단순 유지).
+-- NOTE : 비용은 프로젝트(p_sn)/주문(o_sn)/주문라인(ol_sn)/override(olo_sn)/수급케이스(sc_sn) 등에 귀속될 수 있다(대상은 cost_allocations에서만 표현).
+-- NOTE : 비용 증빙(영수증/세금계산서 등)은 documents/doc_links로 '비용 측 증빙'으로 연결한다(다중 첨부 가능).
+
 -- ======================================================================
 CREATE TABLE costs (
   ct_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 PK',
@@ -153,6 +157,10 @@ CREATE TABLE bank_accounts (
 -- ======================================================================
 -- TABLE: payments
 -- DESC : 지급/결제(카드/이체/현금) 원장
+-- NOTE : payments는 실제 지급 사건(카드/이체/현금)을 기록한다.
+-- NOTE : 지급이 어떤 비용(들)을 얼마만큼 정산했는지는 payment_lines로만 연결한다(중복 저장 금지).
+-- NOTE : 지급 증빙(이체확인/카드승인/정산내역 등)은 documents/doc_links로 '지급 측 증빙'으로 연결한다(다중 첨부 가능).
+
 -- ======================================================================
 CREATE TABLE payments (
   pay_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급/결제 PK',
@@ -185,6 +193,8 @@ CREATE TABLE payments (
 -- ======================================================================
 -- TABLE: payment_lines
 -- DESC : 지급과 비용의 매핑(다대다, 부분지급/일괄지급 지원)
+-- NOTE : payment_lines는 payments(지급) ↔ costs(비용)를 금액으로 매핑한다(부분/분할 정산 포함).
+-- NOTE : 선금/중도금/잔금 같은 '지급 단계'는 payment_lines.note(또는 UI 라벨)로만 표현한다(비용/PO-비용 링크에 중복 저장하지 않는다).
 -- ======================================================================
 CREATE TABLE payment_lines (
   pyl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급-비용 연결 PK',
@@ -208,6 +218,8 @@ CREATE TABLE payment_lines (
 -- ======================================================================
 -- TABLE: cost_allocations
 -- DESC : 비용 배부(프로젝트/주문서/주문라인/override/수급케이스 단위 분배)
+-- NOTE : 비용 귀속 대상은 p_sn/o_sn/ol_sn/olo_sn/sc_sn을 지원한다(비용 원장(ct_*)에는 귀속을 직접 저장하지 않는다).
+-- NOTE : 퀵 비용(예: 카드결제 퀵비)은 PO가 아니라 'costs + cost_allocations'로만 귀속한다.
 -- ======================================================================
 CREATE TABLE cost_allocations (
   ca_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 배부 PK',
@@ -247,6 +259,7 @@ CREATE TABLE cost_allocations (
 -- ======================================================================
 -- TABLE: fx_rates
 -- DESC : 환율 스냅샷(재현/감사 목적)
+-- NOTE : fx_rates는 환율 마스터(참조용)이며, 회계 재현(감사) 목적의 고정 환율/환산 결과는 cost_fx_applications에 저장한다.
 -- ======================================================================
 CREATE TABLE fx_rates (
   fx_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '환율 PK',
@@ -269,6 +282,8 @@ CREATE TABLE fx_rates (
 -- ======================================================================
 -- TABLE: cost_fx_applications
 -- DESC : 비용 환율 적용(적용환율 고정/감사용)
+-- NOTE : 해외 비용은 정산 시점에 적용한 환율과 원화 환산 결과를 고정 저장해 재현/감사를 가능하게 한다.
+-- NOTE : applied_fx_rate/as_of_dt/base_amount(KRW) 등은 '그 시점의 적용 결과'이며, 필요 시 fx_rates(fx_sn)로 환율 마스터를 참조한다.
 -- ======================================================================
 CREATE TABLE cost_fx_applications (
   cfxa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 환율 적용 PK',
@@ -309,6 +324,8 @@ CREATE TABLE cost_fx_applications (
 -- ======================================================================
 -- TABLE: po_cost_links
 -- DESC : PO 1건 = cost 1건 정책을 위한 1:1 연결
+-- NOTE : po_cost_links는 'PO에 연관된 비용을 빠르게 찾기 위한' 조회/편의 연결이다(원가/마진 계산의 기준이 아님).
+-- NOTE : link_type는 지급 단계(선금/잔금)가 아니라 PO 관련 부대비용 성격 분류에만 사용한다(예: FREIGHT, CUSTOMS, INSPECTION, ETC).
 -- ======================================================================
 CREATE TABLE po_cost_links (
   pcl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PO-비용 1:1 연결 PK',
@@ -341,6 +358,8 @@ CREATE TABLE po_cost_links (
 -- ======================================================================
 -- TABLE: invoices
 -- DESC : 인보이스/거래명세/세금계산서 등 외부 문서(지급 단위 아님)
+-- NOTE : invoices는 외부 문서 컨테이너다(영수증/세금계산서/거래명세서 등). invoice 자체는 '지급 단위'가 아니다.
+-- NOTE : invoice_type(유형) 코드는 주석(권장값)을 따른다. 지급/결재 상태는 payables에서 관리한다.
 -- ======================================================================
 CREATE TABLE invoices (
   inv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '인보이스 PK(외부 문서 컨테이너)',
@@ -348,7 +367,7 @@ CREATE TABLE invoices (
   issuer_pt_sn BIGINT UNSIGNED NULL COMMENT '발행 주체 PK(parties) | 없거나 비정형이면 NULL',
   issuer_name VARCHAR(200) NULL COMMENT '발행처 표시명(Party 미연결 시)',
 
-  invoice_type ENUM('STATEMENT','TAX_INVOICE','INVOICE','RECEIPT','OTHER')
+  invoice_type ENUM('STATEMENT','TAX_INVOICE','INVOICE','RECEIPT','OTHER') COMMENT '인보이스 유형(ENUM) | STATEMENT:거래명세, TAX_INVOICE:세금계산서, INVOICE:청구서, RECEIPT:영수증, OTHER:기타'
     NOT NULL DEFAULT 'INVOICE'
     COMMENT '문서 유형(ENUM) | STATEMENT:거래명세, TAX_INVOICE:세금계산서, INVOICE:청구서, RECEIPT:영수증, OTHER:기타',
 
@@ -375,20 +394,21 @@ CREATE TABLE invoices (
   CONSTRAINT fk_invoices_issuer
     FOREIGN KEY (issuer_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_invoices_creator
-    FOREIGN KEY (created_by_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='인보이스/거래명세/세금계산서 등 외부 문서(지급 단위 아님)';
+    FOREIGN KEY (created_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='인보이스/거래명세/세금계산서 등 외부 문서(지급 단위 아님)';
 
 
 -- ======================================================================
 -- TABLE: invoice_lines
 -- DESC : 인보이스 라인(GOODS/CHARGE). invoice는 지급단위가 아니므로 지급 연결은 payables에서 수행
+-- NOTE : invoice_lines는 invoices의 문서 라인이다(재화/비용 항목 등).
+-- NOTE : line_type 권장: GOODS/CHARGE. charge_category는 권장 표준값을 주석에 두고 확장 가능(VARCHAR+COMMENT)으로 운용한다.
 -- ======================================================================
 CREATE TABLE invoice_lines (
   invl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '인보이스 라인 PK',
   inv_sn BIGINT UNSIGNED NOT NULL COMMENT '인보이스 PK(invoices)',
   line_no INT NOT NULL COMMENT '문서 내 라인번호',
 
-  line_type ENUM('GOODS','CHARGE')
+  line_type ENUM('GOODS','CHARGE') COMMENT '라인 유형(ENUM) | GOODS:상품/재화, CHARGE:부대비용/수수료'
     NOT NULL COMMENT '라인 유형(ENUM) | GOODS:물품, CHARGE:부대비용/서비스/세금/할인 등',
 
   /* GOODS 라인 연결(선택) */
@@ -397,7 +417,7 @@ CREATE TABLE invoice_lines (
 
   /* CHARGE 라인 연결(선택) */
   ct_sn BIGINT UNSIGNED NULL COMMENT '관련 비용 PK(costs) | 배송비/통관비 등 비용으로 이미 관리되는 경우 연결(선택)',
-  charge_category VARCHAR(40) NULL COMMENT 'CHARGE 세부 분류(텍스트/코드) | 예: SHIPPING_DOMESTIC, CUSTOMS_DUTY, SERVICE_FEE, TAX, DISCOUNT',
+  charge_category VARCHAR(40) NULL COMMENT 'CHARGE 세부 분류(텍스트/코드) | 예: SHIPPING_DOMESTIC, CUSTOMS_DUTY, SERVICE_FEE, TAX, DISCOUNT | 권장 charge_category(확장 가능): SHIPPING_DOMESTIC/SHIPPING_INTERNATIONAL/CUSTOMS_DUTY/CUSTOMS_BROKER_FEE/INSPECTION_FEE/WAREHOUSE_FEE/PACKAGING_FEE/INSURANCE_FEE/HANDLING_FEE/SERVICE_FEE/TAX/DISCOUNT/OTHER',
 
   description VARCHAR(500) NULL COMMENT '라인 설명(품목명/서비스명/비고)',
   qty DECIMAL(14,3) NULL COMMENT '수량(있으면)',
@@ -424,8 +444,7 @@ CREATE TABLE invoice_lines (
   CONSTRAINT fk_invoice_lines_pol
     FOREIGN KEY (pol_sn) REFERENCES po_lines(pol_sn),
   CONSTRAINT fk_invoice_lines_ct
-    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)
-) COMMENT='인보이스 라인(GOODS/CHARGE). invoice는 지급단위가 아니므로 지급 연결은 payables에서 수행';
+    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)) COMMENT='인보이스 라인(GOODS/CHARGE). invoice는 지급단위가 아니므로 지급 연결은 payables에서 수행';
 
 
 /* =======================================================================
@@ -436,6 +455,8 @@ CREATE TABLE invoice_lines (
 -- ======================================================================
 -- TABLE: payables
 -- DESC : 지급 단위(payable). invoice는 지급단위가 아니며, payment는 결과만 기록
+-- NOTE : payables는 내부 '지급 단위'다(결재/보류/대기/분할지급의 기준).
+-- NOTE : 승인/보류/부분지급/완료 같은 상태는 payables에만 둔다(실지급 결과는 payments).
 -- ======================================================================
 CREATE TABLE payables (
   pbl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청/지급단위 PK(payable)',
@@ -443,7 +464,7 @@ CREATE TABLE payables (
   payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 대상 업체 PK(parties) | 송금/정산 상대',
   payee_bk_sn BIGINT UNSIGNED NULL COMMENT '지급 예정인 금액을 수취할 거래처의 계좌를 식별하는 외래키이다. 지급 승인 시점에 지정된 수취 계좌를 의미한다.',
 
-  payable_status ENUM('CREATED','APPROVED','ON_HOLD','PARTIALLY_PAID','PAID','CANCELLED')
+  payable_status ENUM('CREATED','APPROVED','ON_HOLD','PARTIALLY_PAID','PAID','CANCELLED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류, PARTIALLY_PAID:부분지급, PAID:완료, CANCELLED:취소'
     NOT NULL DEFAULT 'CREATED'
     COMMENT '지급 상태(ENUM) | CREATED:작성, APPROVED:승인, ON_HOLD:보류, PARTIALLY_PAID:부분지급, PAID:완료, CANCELLED:취소',
 
@@ -476,13 +497,13 @@ CREATE TABLE payables (
   CONSTRAINT fk_payables_requested_by
     FOREIGN KEY (requested_by_a_sn) REFERENCES assignees(a_sn),
   CONSTRAINT fk_payables_approved_by
-    FOREIGN KEY (approved_by_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='지급 단위(payable). invoice는 지급단위가 아니며, payment는 결과만 기록';
+    FOREIGN KEY (approved_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='지급 단위(payable). invoice는 지급단위가 아니며, payment는 결과만 기록';
 
 
 -- ======================================================================
 -- TABLE: payable_invoice_allocations
 -- DESC : payable이 어떤 invoice(들)을 어떤 금액으로 정산/지급하는지 배분(묶음/분할/부분 지급 지원)
+-- NOTE : payable 1건이 여러 invoice를 포함할 수 있으며, 그 연결/귀속은 payable_invoice_allocations로 관리한다.
 -- ======================================================================
 CREATE TABLE payable_invoice_allocations (
   pbia_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payable-invoice 배분 PK',
@@ -510,6 +531,7 @@ CREATE TABLE payable_invoice_allocations (
 -- ======================================================================
 -- TABLE: payable_cost_allocations
 -- DESC : payable이 어떤 cost(들)을 어떤 금액으로 정산/지급하는지 배분(프로젝트 원가(cost)와 지급(payable) 연결)
+-- NOTE : payable 1건은 여러 cost에 안분/귀속될 수 있으며, 그 연결/귀속은 payable_cost_allocations로 관리한다.
 -- ======================================================================
 CREATE TABLE payable_cost_allocations (
   pbca_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payable-cost 배분 PK',
@@ -543,6 +565,7 @@ CREATE TABLE payable_cost_allocations (
 -- ======================================================================
 -- TABLE: payment_payable_allocations
 -- DESC : payment(실지급 결과)와 payable(지급단위)의 배분 연결(ALTER 없이 1:N/N:1 지원)
+-- NOTE : payment 1건이 여러 payable에 안분(또는 1:1)될 수 있으며, 그 연결/정산 귀속은 payment_payable_allocations로 관리한다.
 -- ======================================================================
 CREATE TABLE payment_payable_allocations (
   ppa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payment-payable 배분 PK',
