@@ -1,15 +1,48 @@
-/* =======================================================================
- * Balhea ERP - Logistics/Delivery Schema (DDL)
- * -----------------------------------------------------------------------
- * 목적
- * - 납품/물류 실행 레이어
- * - 문서(RFQ/PO) vs 실물(바코드 inventory_units) vs 작업(logistics_jobs) 분리
- * ======================================================================= */
-
+/* ============================================================================
+ * Balhea ERP — Logistics / Delivery Schema (DDL)
+ * ----------------------------------------------------------------------------
+ * [이 파일의 성격]
+ * - 본 파일은 Balhea ERP 스키마 중 "logistics" 레이어에 해당한다.
+ * - 실물 이동(운송/선적)과 물류팀 작업(수거/이동/납품)을 구분하여 기록한다.
+ * - contracts/sourcing 레이어의 실행 결과를 물류 관점에서 추적·집계하기 위한 엔티티들을 정의한다.
+ *
+ * ----------------------------------------------------------------------------
+ * [의존 관계 — 중요]
+ * - 본 파일은 다음 schema들을 전제로 한다:
+ *   - erp_core_schema.sql
+ *     : 조직/담당자/업체/물품/문서/로그 등 공통 기준 엔티티
+ *   - erp_contracts_schema.sql
+ *     : 주문/수급/PO 등 조달 실행의 정본 엔티티(논리적 연계 대상)
+ *
+ * ----------------------------------------------------------------------------
+ * [Shipment vs Delivery — 역할 분리(현 버전 기준)]
+ * - shipments : 수급처로부터 구매한 물건의 "운송/선적" 흐름을 기록한다.
+ *   - 해외/국내 운송 이벤트는 shipment_milestones로 추적한다.
+ * - deliveries : 회사 물류팀의 업무(수거/창고이동/납품) 단위를 기록한다.
+ *   - deliveries는 shipments와 분리되어 기록되며, 양쪽을 1:1로 고정하지 않는다(필요 시 링크/참조로만 연결).
+ *
+ * ----------------------------------------------------------------------------
+ * [코드값/이벤트 표준화]
+ * - delivery_method(물류 방식), job_type(작업 종류), stop_type(정차 지점), milestone_type(운송 이벤트),
+ *   delivery_requests.status/proposals 등은 md 정책의 추천 코드값을 따른다(필요 시 확장 가능).
+ *
+ * ----------------------------------------------------------------------------
+ * [DDL 편집 및 유지 원칙 — 요약]
+ * - 본 파일의 ddl 편집 규율은 erp_core_schema.sql 상단 주석을 정본으로 따른다.
+ * - 사용자가 명시적으로 요청한 변경만 수행한다.
+ * - 임의 개선/정리/축약은 금지하며, 필요 시 제안으로만 제시하고 동의 후 적용한다.
+ *
+ * ----------------------------------------------------------------------------
+ * [ChatGPT / LLM 협업 규율 — 요약]
+ * - 설계 의도(특히 Shipment vs Delivery 역할 분리)를 임의로 변경하지 않는다.
+ * - 편집 범위가 확대될 가능성이 있으면 작업 전에 영향 범위를 먼저 설명한다.
+ * ============================================================================
+ */
 
 -- ======================================================================
 -- TABLE: deliveries
 -- DESC : 납품(헤더)
+-- NOTE : deliveries는 회사 물류팀의 업무 단위를 기록한다(수거/이동/납품). shipments(운송/선적)과 분리되어 기록되며 1:1 고정 전제를 두지 않는다.
 -- ======================================================================
 CREATE TABLE deliveries (
   dv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '납품 PK',
@@ -58,6 +91,8 @@ CREATE TABLE delivery_lines (
 -- ======================================================================
 -- TABLE: shipments
 -- DESC : 운송/선적(Shipment) - 흐름 단위(국내/해외 공용)
+-- NOTE : shipments는 수급처로부터 구매한 물건의 운송/선적 흐름을 기록한다.
+-- NOTE : delivery_method(물류 방식)는 md 정책의 추천 코드값을 따른다(확장 가능). 예: PICKUP_BY_LOGISTICS / SELLER_SHIP_TO_COMPANY / SELLER_SHIP_TO_CUSTOMER (확장: FORWARDER_MANAGED).
 -- ======================================================================
 CREATE TABLE shipments (
   sh_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '운송/선적 PK(국내/해외 공용) | 운송 단위(포워더/택배/화물 등)',
@@ -116,6 +151,7 @@ CREATE TABLE shipment_lines (
 -- ======================================================================
 -- TABLE: shipment_milestones
 -- DESC : 운송 이벤트/마일스톤(추적/증빙) 트래킹 이력 자동 수집이 안되니, 국내 해외 관계 없이 중요한 이벤트나 비용 청구 목적의 기록용으로 쓴다.
+-- NOTE : shipment_milestones는 shipments의 운송 이벤트(이력) 로그다. milestone_type은 md 정책의 추천값을 따른다(해외 확장 포함).
 -- ======================================================================
 CREATE TABLE shipment_milestones (
   sm_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '운송 이벤트 PK',
@@ -182,6 +218,8 @@ CREATE TABLE inventory_units (
 -- ======================================================================
 -- TABLE: delivery_requests
 -- DESC : 배송 협의/요청(스케줄 조율/역제안 기록)
+-- NOTE : delivery_requests는 물류 요청 컨테이너다(내부 요청/외주 요청 등). status는 md 정책의 추천값을 따른다.
+-- NOTE : 권장 status: SUBMITTED/COUNTERED/ACCEPTED/REJECTED/CONFIRMED/CANCELED.
 -- ======================================================================
 CREATE TABLE delivery_requests (
   dr_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '배송 협의/요청 PK | 협의가 필요한 케이스에서 사용',
@@ -216,8 +254,7 @@ CREATE TABLE delivery_requests (
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_delivery_requests_requester FOREIGN KEY (requested_by_a_sn) REFERENCES assignees(a_sn),
   CONSTRAINT fk_delivery_requests_vendor FOREIGN KEY (vendor_pt_sn) REFERENCES parties(pt_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT
-) COMMENT='배송 협의/요청(스케줄 조율/역제안 기록)';
+    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='배송 협의/요청(스케줄 조율/역제안 기록)';
 
 
 -- ======================================================================
@@ -253,6 +290,8 @@ CREATE TABLE delivery_request_lines (
 -- ======================================================================
 -- TABLE: delivery_request_proposals
 -- DESC : 배송 협의 제안/응답(역제안/수락/거절 이력)
+-- NOTE : delivery_request_proposals는 요청에 대한 제안/카운터/수락/거절 히스토리를 남긴다. proposal_type은 md 정책의 추천값을 따른다.
+-- NOTE : 권장 proposal_type: INITIAL/COUNTER/ACCEPT/REJECT.
 -- ======================================================================
 CREATE TABLE delivery_request_proposals (
   drp_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '배송 요청 제안/응답 PK',
@@ -282,13 +321,14 @@ CREATE TABLE delivery_request_proposals (
   CONSTRAINT fk_delivery_request_proposals_proposer_a FOREIGN KEY (proposed_by_a_sn) REFERENCES assignees(a_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_delivery_request_proposals_proposer_vendor FOREIGN KEY (proposed_by_vendor_pt_sn) REFERENCES parties(pt_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT
-) COMMENT='배송 협의 제안/응답(역제안/수락/거절 이력)';
+    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='배송 협의 제안/응답(역제안/수락/거절 이력)';
 
 
 -- ======================================================================
 -- TABLE: logistics_jobs
 -- DESC : 물류 작업(사람/업체가 수행)
+-- NOTE : logistics_jobs는 물류팀 작업 컨테이너다. job_type은 md 정책의 추천값을 따른다.
+-- NOTE : 권장 job_type: PICKUP / TRANSFER / DELIVERY / MIXED.
 -- ======================================================================
 CREATE TABLE logistics_jobs (
   lj_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '물류 작업 PK | 사람이 수행하는 작업 단위',
@@ -329,13 +369,14 @@ CREATE TABLE logistics_jobs (
   CONSTRAINT fk_logistics_jobs_dr FOREIGN KEY (related_dr_sn) REFERENCES delivery_requests(dr_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_logistics_jobs_sh FOREIGN KEY (related_sh_sn) REFERENCES shipments(sh_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT
-) COMMENT='물류 작업(사람/업체가 수행)';
+    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='물류 작업(사람/업체가 수행)';
 
 
 -- ======================================================================
 -- TABLE: logistics_job_stops
 -- DESC : 물류 작업 경유지/정차 지점
+-- NOTE : logistics_job_stops는 한 물류 작업의 정차 지점/순서를 기록한다. stop_type은 md 정책의 추천값을 따른다.
+-- NOTE : 권장 stop_type: VENDOR / OFFICE / WAREHOUSE / CUSTOMER (확장: PORT/AIRPORT/CUSTOMS/FORWARDER_HUB).
 -- ======================================================================
 CREATE TABLE logistics_job_stops (
   ljs_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '물류 작업 정차 지점 PK',
