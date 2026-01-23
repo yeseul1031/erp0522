@@ -14,23 +14,23 @@
 -- ======================================================================
 CREATE TABLE costs (
   ct_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 PK',
-  cost_type ENUM('PRODUCT','MATERIAL','SHIPPING','CUSTOMS','SERVICE','OTHER')
+  ct_type ENUM('PRODUCT','MATERIAL','SHIPPING','CUSTOMS','SERVICE','OTHER')
     NOT NULL COMMENT '비용 유형(ENUM) | PRODUCT:상품구매, MATERIAL:자재구매, SHIPPING:배송/운송, CUSTOMS:통관비, SERVICE:용역/수수료, OTHER:기타',
-  vendor_pt_sn BIGINT UNSIGNED NULL COMMENT '지출 대상 업체 PK(parties)',
-  occurred_at DATETIME NOT NULL COMMENT '지출 발생일시(업무 이벤트)',
-  amount DECIMAL(18,2) NOT NULL COMMENT '비용 금액',
-  currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
-  description VARCHAR(500) NULL COMMENT '비용 설명',
-  created_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
+  ct_pt_sn BIGINT UNSIGNED NULL COMMENT '지출 대상 업체 PK(parties)',
+  ct_occurred_at DATETIME NOT NULL COMMENT '지출 발생일시(업무 이벤트)',
+  ct_amount DECIMAL(18,2) NOT NULL COMMENT '비용 금액',
+  ct_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
+  ct_note VARCHAR(500) NULL COMMENT '비용 설명',
+  ct_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
   ct_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ct_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ct_sn),
-  KEY idx_costs_vendor (vendor_pt_sn),
-  KEY idx_costs_occurred_at (occurred_at),
+  KEY idx_costs_vendor (ct_pt_sn),
+  KEY idx_costs_occurred_at (ct_occurred_at),
   CONSTRAINT fk_costs_vendor
-    FOREIGN KEY (vendor_pt_sn) REFERENCES parties(pt_sn),
+    FOREIGN KEY (ct_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_costs_creator
-    FOREIGN KEY (created_by_a_sn) REFERENCES assignees(a_sn)
+    FOREIGN KEY (ct_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='비용(원장)';
 
 
@@ -48,7 +48,7 @@ CREATE TABLE bank_accounts (
 
   bk_contact VARCHAR(80) NULL COMMENT '연락처(옵션)',
   bk_account_label VARCHAR(80) NULL COMMENT '계좌 별칭(옵션; 예: 주계좌/세금계산서용/긴급용)',
-  bk_memo VARCHAR(255) NULL COMMENT '메모(옵션)',
+  bk_note VARCHAR(500) NULL COMMENT '메모(옵션)',
 
   bk_is_primary TINYINT(1) NOT NULL DEFAULT 0 COMMENT '주 계좌 여부(0/1)',
   bk_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '사용중 여부(0/1)',
@@ -59,7 +59,7 @@ CREATE TABLE bank_accounts (
   bk_swift_bic VARCHAR(20) NULL COMMENT 'SWIFT/BIC(해외송금; 예: BOFAUS3N)',
   bk_iban VARCHAR(34) NULL COMMENT 'IBAN(해외; EU 등)',
   bk_routing_number VARCHAR(32) NULL COMMENT 'Routing/ABA/Sort code 등 지역별 은행코드',
-  bk_bank_address VARCHAR(200) NULL COMMENT '은행 주소(해외송금 시 필요할 수 있음)',
+  bk_bank_address VARCHAR(128) NULL COMMENT '은행 주소(해외송금 시 필요할 수 있음)',
   bk_intermediary_bank_info VARCHAR(255) NULL COMMENT '중개은행 정보(옵션)',
 
   bk_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 시각',
@@ -88,25 +88,25 @@ CREATE TABLE payments (
     NOT NULL COMMENT '지급 수단(ENUM) | CARD:카드, TRANSFER:계좌이체, CASH:현금',
   pay_status ENUM('PENDING','PAID','CANCELLED')
     NOT NULL DEFAULT 'PAID' COMMENT '지급 상태(ENUM) | PENDING:대기, PAID:지급완료, CANCELLED:취소',
-  payee_pt_sn BIGINT UNSIGNED NULL COMMENT '정산/지급 상대 업체 PK(parties) | 네이버/쿠팡 등 정산 주체, 비정형은 예약된 party 사용',
-  payee_bk_sn BIGINT UNSIGNED NULL COMMENT '실제 이체 실행 시 사용된 거래처의 수취 계좌를 식별하는 외래키이다. 실제 지급 결과 기준의 계좌를 기록한다.'
+  pay_pt_sn BIGINT UNSIGNED NULL COMMENT '정산/지급 상대 업체 PK(parties) | 네이버/쿠팡 등 정산 주체, 비정형은 예약된 party 사용',
+  pay_bk_sn BIGINT UNSIGNED NULL COMMENT '실제 이체 실행 시 사용된 거래처의 수취 계좌를 식별하는 외래키이다. 실제 지급 결과 기준의 계좌를 기록한다.',
 
-  paid_at DATETIME NOT NULL COMMENT '지급 완료일시(업무 이벤트)',
-  amount DECIMAL(18,2) NOT NULL COMMENT '지급 금액',
-  currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
-  ref_no VARCHAR(100) NULL COMMENT '참조번호(카드 승인번호/이체 거래번호 등)',
-  memo VARCHAR(500) NULL COMMENT '메모',
-  metadata_json JSON NULL COMMENT '추가 메타(JSON)',
-  created_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
+  pay_paid_at DATETIME NOT NULL COMMENT '지급 완료일시(업무 이벤트)',
+  pay_amount DECIMAL(18,2) NOT NULL COMMENT '지급 금액',
+  pay_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
+  pay_ref_no VARCHAR(32) NULL COMMENT '참조번호(카드 승인번호/이체 거래번호 등)',
+  pay_note VARCHAR(500) NULL COMMENT '메모',
+  pay_data_json JSON NULL COMMENT '추가 메타(JSON)',
+  pay_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
   pay_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pay_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (pay_sn),
-  KEY idx_payments_paid_at (paid_at),
-  KEY idx_payments_payee (payee_pt_sn),
+  KEY idx_payments_paid_at (pay_paid_at),
+  KEY idx_payments_payee (pay_pt_sn),
   CONSTRAINT fk_payments_payee
-    FOREIGN KEY (payee_pt_sn) REFERENCES parties(pt_sn),
+    FOREIGN KEY (pay_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_payments_creator
-    FOREIGN KEY (created_by_a_sn) REFERENCES assignees(a_sn)
+    FOREIGN KEY (pay_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='지급/결제(카드/이체/현금) 원장';
 
 
@@ -118,8 +118,8 @@ CREATE TABLE payment_lines (
   pyl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급-비용 연결 PK',
   pay_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 PK(payments)',
   ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
-  paid_amount DECIMAL(18,2) NOT NULL COMMENT '이번 지급으로 해당 비용에 정산된 금액(부분/분할지급 지원)',
-  note VARCHAR(500) NULL COMMENT '비고',
+  pyl_amount DECIMAL(18,2) NOT NULL COMMENT '이번 지급으로 해당 비용에 정산된 금액(부분/분할지급 지원)',
+  pyl_note VARCHAR(500) NULL COMMENT '비고',
   pyl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pyl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (pyl_sn),
