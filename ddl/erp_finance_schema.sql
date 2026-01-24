@@ -116,7 +116,7 @@ CREATE TABLE costs (
 -- ======================================================================
 CREATE TABLE bank_accounts (
   bk_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '거래처 계좌 PK (ERP 전용 약어)',
-  pt_sn BIGINT UNSIGNED NOT NULL COMMENT '거래처 FK: parties.pt_sn (이 계좌의 소유/수취 대상)',
+  bk_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '거래처 FK: parties.pt_sn (이 계좌의 소유/수취 대상)',
 
   bk_bank_name VARCHAR(80) NOT NULL COMMENT '은행명(국문/영문 모두 가능)',
   bk_account_number VARCHAR(80) NOT NULL COMMENT '계좌번호(문자열; 해외/IBAN 등 포함 가능)',
@@ -143,13 +143,13 @@ CREATE TABLE bank_accounts (
 
   PRIMARY KEY (bk_sn),
 
-  KEY idx_bk_pt (pt_sn, bk_is_active, bk_is_primary),
-  KEY idx_bk_bank_account (bk_bank_name, bk_account_number),
+  KEY idx_bk_pt (bk_pt_sn, bk_is_active, bk_is_primary),
+  KEY idx_bk_bank_account (bk_account_number, bk_bank_name),
 
-  UNIQUE KEY uk_bk_pt_bank_acct (pt_sn, bk_bank_name, bk_account_number)
+  UNIQUE KEY uk_bk_pt_bank_acct (bk_pt_sn, bk_bank_name, bk_account_number)
 
   -- FK는 운영정책에 따라 선택
-  -- ,CONSTRAINT fk_bank_accounts_pt FOREIGN KEY (pt_sn) REFERENCES parties(pt_sn)
+  -- ,CONSTRAINT fk_bank_accounts_pt FOREIGN KEY (bk_pt_sn) REFERENCES parties(pt_sn)
 ) COMMENT='거래처 수취 계좌(국내/해외 겸용, 송금 입력용 주소록)';
 
 
@@ -198,20 +198,20 @@ CREATE TABLE payments (
 -- ======================================================================
 CREATE TABLE payment_lines (
   pyl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급-비용 연결 PK',
-  pay_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 PK(payments)',
-  ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
+  pyl_pay_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 PK(payments)',
+  pyl_ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
   pyl_amount DECIMAL(18,2) NOT NULL COMMENT '이번 지급으로 해당 비용에 정산된 금액(부분/분할지급 지원)',
   pyl_note VARCHAR(500) NULL COMMENT '비고',
   pyl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pyl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (pyl_sn),
-  UNIQUE KEY uk_payment_lines (pay_sn, ct_sn),
-  KEY idx_payment_lines_pay (pay_sn),
-  KEY idx_payment_lines_ct (ct_sn),
+  UNIQUE KEY uk_payment_lines (pyl_pay_sn, pyl_ct_sn),
+  KEY idx_payment_lines_pay (pyl_pay_sn),
+  KEY idx_payment_lines_ct (pyl_ct_sn),
   CONSTRAINT fk_payment_lines_pay
-    FOREIGN KEY (pay_sn) REFERENCES payments(pay_sn),
+    FOREIGN KEY (pyl_pay_sn) REFERENCES payments(pay_sn),
   CONSTRAINT fk_payment_lines_ct
-    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)
+    FOREIGN KEY (pyl_ct_sn) REFERENCES costs(ct_sn)
 ) COMMENT='지급과 비용의 매핑(다대다, 부분지급/일괄지급 지원)';
 
 
@@ -230,7 +230,7 @@ CREATE TABLE cost_allocations (
   olo_sn BIGINT UNSIGNED NULL COMMENT '주문라인 override PK(order_line_overrides) | 희소 케이스 구성품/분할 단위 비용',
   sc_sn BIGINT UNSIGNED NULL COMMENT '수급케이스 PK(sourcing_cases) | 특정 수급(국내/해외/제작) 건에 귀속되는 비용',
   allocated_amount DECIMAL(18,2) NOT NULL COMMENT '배부 금액',
-  note VARCHAR(500) NULL COMMENT '비고',
+  ca_note VARCHAR(500) NULL COMMENT '비고',
   ca_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ca_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ca_sn),
@@ -262,21 +262,62 @@ CREATE TABLE cost_allocations (
 -- NOTE : fx_rates는 환율 마스터(참조용)이며, 회계 재현(감사) 목적의 고정 환율/환산 결과는 cost_fx_applications에 저장한다.
 -- ======================================================================
 CREATE TABLE fx_rates (
-  fx_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '환율 PK',
-  base_currency CHAR(3) NOT NULL COMMENT '기준 통화(예: KRW)',
-  quote_currency CHAR(3) NOT NULL COMMENT '상대 통화(예: USD)',
-  fx_rate DECIMAL(18,8) NOT NULL COMMENT '환율 값(1 quote = fx_rate base)',
-  as_of_dt DATETIME NOT NULL COMMENT '환율 기준일시(스냅샷)',
-  source VARCHAR(100) NULL COMMENT '환율 출처(예: KEB, ECB, Fixer 등)',
-  note VARCHAR(200) NULL COMMENT '비고',
-  fx_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  fx_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+  fx_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'FX 환율 스냅샷 PK',
 
-  PRIMARY KEY (fx_sn),
-  UNIQUE KEY uk_fx_rates (base_currency, quote_currency, as_of_dt),
-  KEY idx_fx_rates_pair (base_currency, quote_currency),
-  KEY idx_fx_rates_as_of (as_of_dt)
-) COMMENT='환율 스냅샷(재현/감사 목적)';
+  fx_base_ccy CHAR(3) NOT NULL COMMENT
+'기준 통화 (ISO 4217, 예: USD).
+- fx_rate는 "기준 1단위"에 대한 값으로 해석한다.',
+
+  fx_quote_ccy CHAR(3) NOT NULL COMMENT
+'대상/상대 통화 (ISO 4217, 예: KRW).
+- fx_rate는 "대상 통화 단위"로 표현된다.',
+
+  fx_rate DECIMAL(18, 8) NOT NULL COMMENT
+'환율 값 (방향 고정: base -> quote).
+- 정의: 1 {fx_base_ccy} = fx_rate {fx_quote_ccy}
+- 예1) base=USD, quote=KRW, fx_rate=1300.50  => 1 USD = 1300.50 KRW
+- 예2) base=EUR, quote=USD, fx_rate=1.08520000 => 1 EUR = 1.0852 USD
+- 주의: "적용 정책/사유"는 fx_rates가 알지 않는다. (왜 이 값을 선택했는지는 application/비용/계약 레이어에서 관리)',
+
+  fx_as_of_dt DATETIME NOT NULL COMMENT
+'환율 기준 시각(as-of).
+- 이 스냅샷이 “어느 시점의 값”인지 고정하는 기준.
+- 목적: cost가 fx_sn을 참조하면, 나중에 동일 시점의 환율 상태를 재현할 수 있어야 한다.',
+
+  fx_source VARCHAR(50) NOT NULL COMMENT
+'환율 출처.
+- 예: ECB, KEBHANA, BLOOMBERG, REUTERS, MANUAL(수동)
+- 목적: 동일 통화쌍/동일 시각이라도 출처에 따라 값이 다를 수 있으므로 출처를 고정하여 재현/감사 가능하게 한다.',
+
+  fx_source_ref VARCHAR(100) NULL COMMENT
+'출처별 원본 식별자/코드(옵션).
+- 예: API 응답의 rate_id, 고시 코드, 스크래핑 원문 키, 내부 업로드 파일 식별자 등
+- 목적: 사후 검증 시 "이 값이 어디서 왔는지" 원문 추적을 돕는다.',
+
+  fx_rate_type VARCHAR(30) NOT NULL COMMENT
+'환율 값의 성격(스냅샷 메타).
+- 이것은 "적용 정책/사유"가 아니라, 환율 값 자체가 어떤 성격의 값인지(고시/스팟/평균 등)를 나타낸다.
+- 권장 값(예시):
+  - SPOT    : 시장/실시간(또는 근실시간) 값
+  - FIXING  : 특정 기준 시각의 고시/확정 값
+  - AVERAGE : 기간 평균 값(월평균 등)
+  - CUSTOM  : 내부 수동 입력 값(출처가 MANUAL일 때 주로 사용)',
+
+  fx_created_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT
+'스냅샷 레코드 생성 시각(시스템 기록).
+- fx_as_of_dt는 “환율의 기준 시각”, fx_created_dt는 “DB에 저장된 시각”으로 의미가 다르다.',
+
+  UNIQUE KEY uq_fx_rates_snapshot (
+    fx_base_ccy,
+    fx_quote_ccy,
+    fx_as_of_dt,
+    fx_rate_type,
+    fx_source
+  ) COMMENT
+'동일 시점/유형/출처의 환율 스냅샷 중복 방지.
+- 같은 as-of라도 source 또는 type이 다르면 다른 스냅샷으로 공존 가능'
+) COMMENT='환율 스냅샷 정본 테이블 (과거 재현 가능해야 함)';
+
 
 
 -- ======================================================================
@@ -286,29 +327,53 @@ CREATE TABLE fx_rates (
 -- NOTE : applied_fx_rate/as_of_dt/base_amount(KRW) 등은 '그 시점의 적용 결과'이며, 필요 시 fx_rates(fx_sn)로 환율 마스터를 참조한다.
 -- ======================================================================
 CREATE TABLE cost_fx_applications (
-  cfxa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 환율 적용 PK',
-  c_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
+  cfxa_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'Cost-FX 적용 관계 PK',
 
-  src_currency CHAR(3) NOT NULL COMMENT '원 통화(예: USD)',
-  src_amount DECIMAL(18,2) NOT NULL COMMENT '원 금액',
+  ct_sn BIGINT UNSIGNED NOT NULL COMMENT
+'적용 대상 cost PK (costs.ct_sn).
+- 이 테이블은 cost와 fx_rates 스냅샷을 "연결"하는 링크 테이블이다.',
 
-  base_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '환산 기준 통화(기본 KRW)',
-  fx_sn BIGINT UNSIGNED NULL COMMENT '적용 환율 PK(fx_rates) | 선택(숫자 직접 저장해도 됨)',
-  applied_fx_rate DECIMAL(18,8) NOT NULL COMMENT '적용 환율 값(재현용, 필수)',
-  as_of_dt DATETIME NOT NULL COMMENT '적용 환율 기준일시(재현용)',
+  fx_sn BIGINT UNSIGNED NOT NULL COMMENT
+'적용된 환율 스냅샷 PK (fx_rates.fx_sn).
+- 환율 값(rate) 자체는 fx_rates에만 존재해야 하며, 이 테이블에 중복 저장하지 않는다.',
 
-  base_amount DECIMAL(18,2) NOT NULL COMMENT '환산 금액(예: KRW)',
+  cfxa_policy_code VARCHAR(30) NULL COMMENT
+'환율 선택/적용 기준(사유) 코드.
+- fx_rates가 "무슨 값이었는가(what)"를 책임진다면,
+  cfxa_policy_code는 "왜 이 fx_sn을 선택했는가(why)"를 기록한다.
+- 예시(권장 패턴, 실제 값은 내부 정책에 맞게):
+  - QUOTE_DATE   : 견적일 기준 환율
+  - PO_DATE      : 발주일 기준 환율
+  - PAYMENT_DATE : 지급일 기준 환율
+  - CUSTOMS_DATE : 통관일 기준 환율
+  - MANUAL_LOCK  : 수동 지정/고정 (특정 사유로 고정)
+- 주의: 이 코드는 회사 운영 코드이며, 코드값은 주석/문서에 append-only로 누적 보강한다.',
 
-  cfxa_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  cfxa_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+  cfxa_applied_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT
+'이 환율 스냅샷을 적용(선택)하기로 결정한 시각.
+- fx_as_of_dt(환율 기준 시각)과 구분된다.
+- fx_as_of_dt는 “환율 값이 대표하는 시점”
+- cfxa_applied_dt는 “그 환율을 cost에 연결하기로 결정한 시점”',
 
-  PRIMARY KEY (cfxa_sn),
-  UNIQUE KEY uk_cost_fx_applications (c_sn),
-  KEY idx_cost_fx_applications_fx (fx_sn),
+  cfxa_note VARCHAR(255) NULL COMMENT
+'비고 (수동 지정 사유, 예외 상황 설명 등).
+- 환율 값/통화/계산 결과를 중복 저장하지 않고,
+  "선택 근거"만 최소한으로 남긴다.',
 
-  CONSTRAINT fk_cost_fx_applications_c FOREIGN KEY (c_sn) REFERENCES costs(c_sn),
-  CONSTRAINT fk_cost_fx_applications_fx FOREIGN KEY (fx_sn) REFERENCES fx_rates(fx_sn)
-) COMMENT='비용 환율 적용(적용환율 고정/감사용)';
+  UNIQUE KEY uq_cfxa_ct (ct_sn) COMMENT
+'1 cost = 1 fx 스냅샷 (현재 정책).
+- cost에 적용된 환율은 하나로 고정한다.
+- 정책이 바뀌어 이력이 필요해지면, UNIQUE를 해제하고 이력 테이블로 확장한다.',
+
+  KEY idx_cfxa_fx (fx_sn),
+
+  CONSTRAINT fk_cfxa_ct
+    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn),
+
+  CONSTRAINT fk_cfxa_fx
+    FOREIGN KEY (fx_sn) REFERENCES fx_rates(fx_sn)
+) COMMENT='Cost와 환율 스냅샷 간 적용 관계 (링크 + 선택 사유만 기록)';
+
 
 /* =======================================================================
  * Invoice / Payable 확장
@@ -332,7 +397,7 @@ CREATE TABLE po_cost_links (
   po_sn BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders)',
   ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs) | (정책) PO 1건당 cost 1건',
 
-  note VARCHAR(500) NULL COMMENT '비고(정책/예외 사유 등)',
+  pcl_note VARCHAR(500) NULL COMMENT '비고(정책/예외 사유 등)',
 
   pcl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pcl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -364,37 +429,37 @@ CREATE TABLE po_cost_links (
 CREATE TABLE invoices (
   inv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '인보이스 PK(외부 문서 컨테이너)',
 
-  issuer_pt_sn BIGINT UNSIGNED NULL COMMENT '발행 주체 PK(parties) | 없거나 비정형이면 NULL',
-  issuer_name VARCHAR(200) NULL COMMENT '발행처 표시명(Party 미연결 시)',
+  inv_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT '발행 주체 PK(parties) | 없거나 비정형이면 NULL',
+  inv_issuer_name VARCHAR(200) NULL COMMENT '발행처 표시명(Party 미연결 시)',
 
-  invoice_type ENUM('STATEMENT','TAX_INVOICE','INVOICE','RECEIPT','OTHER') COMMENT '인보이스 유형(ENUM) | STATEMENT:거래명세, TAX_INVOICE:세금계산서, INVOICE:청구서, RECEIPT:영수증, OTHER:기타'
+  inv_invoice_type ENUM('STATEMENT','TAX_INVOICE','INVOICE','RECEIPT','OTHER') COMMENT '인보이스 유형(ENUM) | STATEMENT:거래명세, TAX_INVOICE:세금계산서, INVOICE:청구서, RECEIPT:영수증, OTHER:기타'
     NOT NULL DEFAULT 'INVOICE'
     COMMENT '문서 유형(ENUM) | STATEMENT:거래명세, TAX_INVOICE:세금계산서, INVOICE:청구서, RECEIPT:영수증, OTHER:기타',
 
-  doc_no VARCHAR(120) NULL COMMENT '문서번호(거래명세서 번호/세금계산서 번호 등)',
-  issued_at DATETIME NULL COMMENT '문서 발행일시(업무 이벤트)',
-  due_at DATE NULL COMMENT '문서상 지급기한(있으면)',
+  inv_doc_no VARCHAR(120) NULL COMMENT '문서번호(거래명세서 번호/세금계산서 번호 등)',
+  inv_issued_at DATETIME NULL COMMENT '문서 발행일시(업무 이벤트)',
+  inv_due_at DATE NULL COMMENT '문서상 지급기한(있으면)',
 
-  currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '문서 통화',
-  subtotal_amount DECIMAL(18,2) NULL COMMENT '공급가액/소계(있으면)',
-  tax_amount DECIMAL(18,2) NULL COMMENT '세액(있으면)',
-  total_amount DECIMAL(18,2) NOT NULL COMMENT '총액',
+  inv_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '문서 통화',
+  inv_subtotal_amount DECIMAL(18,2) NULL COMMENT '공급가액/소계(있으면)',
+  inv_tax_amount DECIMAL(18,2) NULL COMMENT '세액(있으면)',
+  inv_total_amount DECIMAL(18,2) NOT NULL COMMENT '총액',
 
-  memo VARCHAR(500) NULL COMMENT '메모',
+  inv_note VARCHAR(500) NULL COMMENT '메모',
 
-  created_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
+  inv_created_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
   inv_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   inv_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (inv_sn),
-  KEY idx_invoices_issuer (issuer_pt_sn),
-  KEY idx_invoices_issued_at (issued_at),
-  KEY idx_invoices_doc_no (doc_no),
+  KEY idx_invoices_issuer (inv_issuer_pt_sn),
+  KEY idx_invoices_issued_at (inv_issued_at),
+  KEY idx_invoices_doc_no (inv_doc_no),
 
   CONSTRAINT fk_invoices_issuer
-    FOREIGN KEY (issuer_pt_sn) REFERENCES parties(pt_sn),
+    FOREIGN KEY (inv_issuer_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_invoices_creator
-    FOREIGN KEY (created_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='인보이스/거래명세/세금계산서 등 외부 문서(지급 단위 아님)';
+    FOREIGN KEY (inv_created_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='인보이스/거래명세/세금계산서 등 외부 문서(지급 단위 아님)';
 
 
 -- ======================================================================
@@ -405,44 +470,44 @@ CREATE TABLE invoices (
 -- ======================================================================
 CREATE TABLE invoice_lines (
   invl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '인보이스 라인 PK',
-  inv_sn BIGINT UNSIGNED NOT NULL COMMENT '인보이스 PK(invoices)',
-  line_no INT NOT NULL COMMENT '문서 내 라인번호',
+  invl_inv_sn BIGINT UNSIGNED NOT NULL COMMENT '인보이스 PK(invoices)',
+  invl_line_no INT NOT NULL COMMENT '문서 내 라인번호',
 
-  line_type ENUM('GOODS','CHARGE') COMMENT '라인 유형(ENUM) | GOODS:상품/재화, CHARGE:부대비용/수수료'
+  invl_line_type ENUM('GOODS','CHARGE') COMMENT '라인 유형(ENUM) | GOODS:상품/재화, CHARGE:부대비용/수수료'
     NOT NULL COMMENT '라인 유형(ENUM) | GOODS:물품, CHARGE:부대비용/서비스/세금/할인 등',
 
   /* GOODS 라인 연결(선택) */
   po_sn BIGINT UNSIGNED NULL COMMENT '관련 PO PK(purchase_orders) | 문서가 PO 단위로 묶일 때 선택',
-  pol_sn BIGINT UNSIGNED NULL COMMENT '관련 PO 라인 PK(po_lines) | 가능하면 연결(선택)',
+  invl_pol_sn BIGINT UNSIGNED NULL COMMENT '관련 PO 라인 PK(po_lines) | 가능하면 연결(선택)',
 
   /* CHARGE 라인 연결(선택) */
   ct_sn BIGINT UNSIGNED NULL COMMENT '관련 비용 PK(costs) | 배송비/통관비 등 비용으로 이미 관리되는 경우 연결(선택)',
-  charge_category VARCHAR(40) NULL COMMENT 'CHARGE 세부 분류(텍스트/코드) | 예: SHIPPING_DOMESTIC, CUSTOMS_DUTY, SERVICE_FEE, TAX, DISCOUNT | 권장 charge_category(확장 가능): SHIPPING_DOMESTIC/SHIPPING_INTERNATIONAL/CUSTOMS_DUTY/CUSTOMS_BROKER_FEE/INSPECTION_FEE/WAREHOUSE_FEE/PACKAGING_FEE/INSURANCE_FEE/HANDLING_FEE/SERVICE_FEE/TAX/DISCOUNT/OTHER',
+  invl_charge_category VARCHAR(40) NULL COMMENT 'CHARGE 세부 분류(텍스트/코드) | 예: SHIPPING_DOMESTIC, CUSTOMS_DUTY, SERVICE_FEE, TAX, DISCOUNT | 권장 charge_category(확장 가능): SHIPPING_DOMESTIC/SHIPPING_INTERNATIONAL/CUSTOMS_DUTY/CUSTOMS_BROKER_FEE/INSPECTION_FEE/WAREHOUSE_FEE/PACKAGING_FEE/INSURANCE_FEE/HANDLING_FEE/SERVICE_FEE/TAX/DISCOUNT/OTHER',
 
-  description VARCHAR(500) NULL COMMENT '라인 설명(품목명/서비스명/비고)',
-  qty DECIMAL(14,3) NULL COMMENT '수량(있으면)',
-  unit_price DECIMAL(18,2) NULL COMMENT '단가(있으면)',
-  amount DECIMAL(18,2) NOT NULL COMMENT '라인 금액(할인 등은 음수 가능)',
-  currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '라인 통화(기본: invoices.currency)',
+  invl_description VARCHAR(500) NULL COMMENT '라인 설명(품목명/서비스명/비고)',
+  invl_qty DECIMAL(14,3) NULL COMMENT '수량(있으면)',
+  invl_unit_price DECIMAL(18,2) NULL COMMENT '단가(있으면)',
+  invl_amount DECIMAL(18,2) NOT NULL COMMENT '라인 금액(할인 등은 음수 가능)',
+  invl_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '라인 통화(기본: invoices.currency)',
 
   invl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   invl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (invl_sn),
-  UNIQUE KEY uk_invoice_lines (inv_sn, line_no),
-  KEY idx_invoice_lines_inv (inv_sn),
+  UNIQUE KEY uk_invoice_lines (invl_inv_sn, invl_line_no),
+  KEY idx_invoice_lines_inv (invl_inv_sn),
   KEY idx_invoice_lines_po (po_sn),
-  KEY idx_invoice_lines_pol (pol_sn),
+  KEY idx_invoice_lines_pol (invl_pol_sn),
   KEY idx_invoice_lines_ct (ct_sn),
-  KEY idx_invoice_lines_type (line_type),
-  KEY idx_invoice_lines_charge_cat (charge_category),
+  KEY idx_invoice_lines_type (invl_line_type),
+  KEY idx_invoice_lines_charge_cat (invl_charge_category),
 
   CONSTRAINT fk_invoice_lines_inv
-    FOREIGN KEY (inv_sn) REFERENCES invoices(inv_sn),
+    FOREIGN KEY (invl_inv_sn) REFERENCES invoices(inv_sn),
   CONSTRAINT fk_invoice_lines_po
     FOREIGN KEY (po_sn) REFERENCES purchase_orders(po_sn),
   CONSTRAINT fk_invoice_lines_pol
-    FOREIGN KEY (pol_sn) REFERENCES po_lines(pol_sn),
+    FOREIGN KEY (invl_pol_sn) REFERENCES po_lines(pol_sn),
   CONSTRAINT fk_invoice_lines_ct
     FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)) COMMENT='인보이스 라인(GOODS/CHARGE). invoice는 지급단위가 아니므로 지급 연결은 payables에서 수행';
 
@@ -461,43 +526,43 @@ CREATE TABLE invoice_lines (
 CREATE TABLE payables (
   pbl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청/지급단위 PK(payable)',
 
-  payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 대상 업체 PK(parties) | 송금/정산 상대',
-  payee_bk_sn BIGINT UNSIGNED NULL COMMENT '지급 예정인 금액을 수취할 거래처의 계좌를 식별하는 외래키이다. 지급 승인 시점에 지정된 수취 계좌를 의미한다.',
+  pbl_payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 대상 업체 PK(parties) | 송금/정산 상대',
+  pbl_payee_bk_sn BIGINT UNSIGNED NULL COMMENT '지급 예정인 금액을 수취할 거래처의 계좌를 식별하는 외래키이다. 지급 승인 시점에 지정된 수취 계좌를 의미한다.',
 
-  payable_status ENUM('CREATED','APPROVED','ON_HOLD','PARTIALLY_PAID','PAID','CANCELLED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류, PARTIALLY_PAID:부분지급, PAID:완료, CANCELLED:취소'
+  pbl_payable_status ENUM('CREATED','APPROVED','ON_HOLD','PARTIALLY_PAID','PAID','CANCELLED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류, PARTIALLY_PAID:부분지급, PAID:완료, CANCELLED:취소'
     NOT NULL DEFAULT 'CREATED'
     COMMENT '지급 상태(ENUM) | CREATED:작성, APPROVED:승인, ON_HOLD:보류, PARTIALLY_PAID:부분지급, PAID:완료, CANCELLED:취소',
 
-  requested_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees) | 구매/운영/재무 등',
-  approved_by_a_sn BIGINT UNSIGNED NULL COMMENT '승인자 PK(assignees) | 승인 시 설정',
+  pbl_requested_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees) | 구매/운영/재무 등',
+  pbl_approved_by_a_sn BIGINT UNSIGNED NULL COMMENT '승인자 PK(assignees) | 승인 시 설정',
 
-  requested_at DATETIME NOT NULL COMMENT '지급 요청일시(업무 이벤트)',
-  approved_at DATETIME NULL COMMENT '승인일시(업무 이벤트)',
-  due_at DATE NULL COMMENT '지급 예정/기한(업무 이벤트)',
+  pbl_requested_at DATETIME NOT NULL COMMENT '지급 요청일시(업무 이벤트)',
+  pbl_approved_at DATETIME NULL COMMENT '승인일시(업무 이벤트)',
+  pbl_due_at DATE NULL COMMENT '지급 예정/기한(업무 이벤트)',
 
-  currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급 통화',
-  total_amount DECIMAL(18,2) NOT NULL COMMENT '지급 대상 총액(업무 기준)',
+  pbl_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급 통화',
+  pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '지급 대상 총액(업무 기준)',
 
   /* 편의 필드(선택): payments 합산으로도 계산 가능 */
   paid_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지급 완료 누적액(편의). 실제 값은 payment_payable_allocations 합으로도 검증 가능',
 
-  memo VARCHAR(500) NULL COMMENT '재무 메모(지급 사유/특이사항)',
+  pbl_note VARCHAR(500) NULL COMMENT '재무 메모(지급 사유/특이사항)',
 
   pbl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pbl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (pbl_sn),
-  KEY idx_payables_payee (payee_pt_sn),
-  KEY idx_payables_status (payable_status),
-  KEY idx_payables_due (due_at),
-  KEY idx_payables_requested_by (requested_by_a_sn),
+  KEY idx_payables_payee (pbl_payee_pt_sn),
+  KEY idx_payables_status (pbl_payable_status),
+  KEY idx_payables_due (pbl_due_at),
+  KEY idx_payables_requested_by (pbl_requested_by_a_sn),
 
   CONSTRAINT fk_payables_payee
-    FOREIGN KEY (payee_pt_sn) REFERENCES parties(pt_sn),
+    FOREIGN KEY (pbl_payee_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_payables_requested_by
-    FOREIGN KEY (requested_by_a_sn) REFERENCES assignees(a_sn),
+    FOREIGN KEY (pbl_requested_by_a_sn) REFERENCES assignees(a_sn),
   CONSTRAINT fk_payables_approved_by
-    FOREIGN KEY (approved_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='지급 단위(payable). invoice는 지급단위가 아니며, payment는 결과만 기록';
+    FOREIGN KEY (pbl_approved_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='지급 단위(payable). invoice는 지급단위가 아니며, payment는 결과만 기록';
 
 
 -- ======================================================================
@@ -510,8 +575,8 @@ CREATE TABLE payable_invoice_allocations (
   pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
   inv_sn BIGINT UNSIGNED NOT NULL COMMENT 'invoice PK(invoices)',
 
-  allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payable이 해당 invoice에서 커버하는 금액(부분/분할/묶음 지원)',
-  note VARCHAR(500) NULL COMMENT '비고',
+  pbia_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payable이 해당 invoice에서 커버하는 금액(부분/분할/묶음 지원)',
+  pbia_note VARCHAR(500) NULL COMMENT '비고',
 
   pbia_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pbia_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -538,8 +603,8 @@ CREATE TABLE payable_cost_allocations (
   pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
   ct_sn BIGINT UNSIGNED NOT NULL COMMENT 'cost PK(costs)',
 
-  allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payable이 해당 cost에 대해 정산하는 금액(부분/분할/묶음 지원)',
-  note VARCHAR(500) NULL COMMENT '비고',
+  pbca_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payable이 해당 cost에 대해 정산하는 금액(부분/분할/묶음 지원)',
+  pbca_note VARCHAR(500) NULL COMMENT '비고',
 
   pbca_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pbca_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -572,8 +637,8 @@ CREATE TABLE payment_payable_allocations (
   pay_sn BIGINT UNSIGNED NOT NULL COMMENT 'payment PK(payments)',
   pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
 
-  allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payment가 해당 payable에 귀속되는 금액(부분/분할/묶음 지원)',
-  note VARCHAR(500) NULL COMMENT '비고',
+  ppa_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payment가 해당 payable에 귀속되는 금액(부분/분할/묶음 지원)',
+  ppa_note VARCHAR(500) NULL COMMENT '비고',
 
   ppa_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ppa_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',

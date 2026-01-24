@@ -117,11 +117,11 @@ CREATE TABLE projects (
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (p_sn),
-  KEY idx_projects_customer_pt_sn (customer_pt_sn),
+  KEY idx_projects_customer_pt_sn (p_customer_pt_sn),
   KEY idx_projects_manager (p_a_sn),
   KEY idx_projects_status (p_status),
   CONSTRAINT fk_projects_customer
-    FOREIGN KEY (customer_pt_sn) REFERENCES parties(pt_sn),
+    FOREIGN KEY (p_customer_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_projects_manager
     FOREIGN KEY (p_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='프로젝트(=계약)';
@@ -133,7 +133,7 @@ CREATE TABLE projects (
 -- ======================================================================
 CREATE TABLE orders (
   o_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문서 PK',
-  p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects)',
+  o_p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects)',
   o_no VARCHAR(32) NULL COMMENT '주문서 번호(외부/내부 식별용)',
   o_type ENUM('CONTRACT_ORDER','PRE_CONTRACT_ORDER')
     NOT NULL DEFAULT 'CONTRACT_ORDER'
@@ -146,10 +146,10 @@ CREATE TABLE orders (
   o_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   o_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (o_sn),
-  KEY idx_orders_p_sn (p_sn),
+  KEY idx_orders_p_sn (o_p_sn),
   KEY idx_orders_status (o_status),
   CONSTRAINT fk_orders_projects
-    FOREIGN KEY (p_sn) REFERENCES projects(p_sn)
+    FOREIGN KEY (o_p_sn) REFERENCES projects(p_sn)
 ) COMMENT='주문서(프로젝트 하위)';
 
 
@@ -179,7 +179,7 @@ CREATE TABLE orders (
 
 CREATE TABLE order_lines (
   ol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문라인 PK',
-  o_sn BIGINT UNSIGNED NOT NULL COMMENT '주문서 PK(orders)',
+  ol_o_sn BIGINT UNSIGNED NOT NULL COMMENT '주문서 PK(orders)',
   ol_no INT NOT NULL COMMENT '주문서 내 라인 번호',
 
   web_item_name VARCHAR(128) NOT NULL COMMENT '(사이트상) 요구 품목명(예: 십자 드라이버)',
@@ -206,11 +206,11 @@ CREATE TABLE order_lines (
   ol_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ol_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ol_sn),
-  UNIQUE KEY uk_order_lines_order_line_no (o_sn, ol_no),
-  KEY idx_order_lines_o_sn (o_sn),
+  UNIQUE KEY uk_order_lines_order_line_no (ol_o_sn, ol_no),
+  KEY idx_order_lines_o_sn (ol_o_sn),
   KEY idx_order_lines_status (ol_status),
   CONSTRAINT fk_order_lines_orders
-    FOREIGN KEY (o_sn) REFERENCES orders(o_sn)
+    FOREIGN KEY (ol_o_sn) REFERENCES orders(o_sn)
 ) COMMENT='주문라인(고객 요구/납품 약속 단위)';
 
 
@@ -222,25 +222,24 @@ CREATE TABLE order_lines (
 -- ======================================================================
 CREATE TABLE order_line_overrides (
   olo_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문라인 예외(override) PK',
-  ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines)',
+  olo_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines)',
   olo_type ENUM('SPLIT','SUBSTITUTE','ADD_ON','BUNDLE')
     NOT NULL COMMENT '예외 유형(ENUM) | SPLIT:분할구매, SUBSTITUTE:대체품, ADD_ON:추가구매, BUNDLE:조합구성품',
-
   olo_item_name VARCHAR(128) NOT NULL COMMENT '(override) 요구 품목명(예: 십자 드라이버)',
   olo_item_spec JSON NULL COMMENT '(override) 요구 규격/조건(자유형 JSON)',
   olo_item_qty DECIMAL(14,3) NOT NULL COMMENT '(override) 요구 수량(납품 약속 수량)',
   olo_item_unit VARCHAR(20) NULL COMMENT '(override) 단위(예: EA, SET)',
--- olo_unit_price 는 없다. 왜냐하면 주문라인의 단가 1개만 실 단가이고 남어지는 참조일뿐이다.
+  -- olo_unit_price 는 없다. 왜냐하면 주문라인의 단가 1개만 실 단가이고 남어지는 참조일뿐이다.
 
 
   olo_note VARCHAR(500) NULL COMMENT '사유/메모',
   olo_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   olo_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (olo_sn),
-  KEY idx_olo_ol (ol_sn),
+  KEY idx_olo_ol (olo_ol_sn),
   KEY idx_olo_type (olo_type),
   CONSTRAINT fk_olo_ol
-    FOREIGN KEY (ol_sn) REFERENCES order_lines(ol_sn)
+    FOREIGN KEY (olo_ol_sn) REFERENCES order_lines(ol_sn)
 ) COMMENT='주문라인 희소 케이스(분할/대체/추가/조합) 지원';
 
 
@@ -283,7 +282,7 @@ CREATE TABLE order_line_overrides (
 
 CREATE TABLE sourcing_cases (
   sc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수급 케이스 PK',
-  ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines) (1:1)',
+  sc_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines) (1:1)',
   sc_required_qty DECIMAL(14,3) NOT NULL COMMENT '요구된 수급 수량(order_line 의 수량과는 다를 수 있음)',
   sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
     NOT NULL COMMENT '수급 방식(ENUM) | DOMESTIC:국내구매, OVERSEAS:해외구매, IN_HOUSE:자체제작',
@@ -314,13 +313,13 @@ CREATE TABLE sourcing_cases (
   sc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   sc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (sc_sn),
-  UNIQUE KEY uk_sourcing_cases_ol_sn (ol_sn),
+  UNIQUE KEY uk_sourcing_cases_ol_sn (sc_ol_sn),
   KEY idx_sourcing_cases_assignee (sc_assignee_a_sn),
   KEY idx_sourcing_cases_status (sc_status),
   CONSTRAINT fk_sourcing_cases_order_lines
-    FOREIGN KEY (ol_sn) REFERENCES order_lines(ol_sn),
+    FOREIGN KEY (sc_ol_sn) REFERENCES order_lines(ol_sn),
   CONSTRAINT fk_sourcing_cases_assignee
-    FOREIGN KEY (sc_assignee_a_sn) REFERENCES assignees(a_sn),
+    FOREIGN KEY (sc_assignee_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='수급 케이스(주문라인 단위 공통 컨테이너)';
 
 
@@ -457,7 +456,8 @@ CREATE TABLE sourcing_case_lines (
     FOREIGN KEY (scl_sc_sn) REFERENCES sourcing_cases(sc_sn),
 
   -- 아래 FK들은 테이블 존재/최종 스키마에 따라 활성화.
-  -- order_line_overrides, goods 테이블이 core schema에 존재하는 경우 활성화 권장.
+  -- order_line_overrides,
+  goods 테이블이 core schema에 존재하는 경우 활성화 권장.
   CONSTRAINT fk_scl_ol
     FOREIGN KEY (scl_ol_sn) REFERENCES order_lines(ol_sn),
 
@@ -469,7 +469,6 @@ CREATE TABLE sourcing_case_lines (
 
   CONSTRAINT fk_scl_parent
     FOREIGN KEY (scl_parent_scl_sn) REFERENCES sourcing_case_lines(scl_sn)
-
 ) COMMENT='수급 조달 라인(정본). RFQ/PO는 본 라인을 참조하여 요청한다(유추 금지).';
 
 
@@ -479,16 +478,16 @@ CREATE TABLE sourcing_case_lines (
 -- ======================================================================
 CREATE TABLE domestic_cases (
   dc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '국내 수급 케이스 PK(시도 인스턴스)',
-  sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
+  dc_sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
   dc_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '현재 활성 케이스 여부(1=활성, 0=비활성/과거시도)',
   dc_closed_at DATETIME NULL COMMENT '종결일시(전환/중단 시, 업무 이벤트)',
   dc_note VARCHAR(500) NULL COMMENT '비고',
   dc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   dc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (dc_sn),
-  KEY idx_domestic_cases_sc_sn (sc_sn),
+  KEY idx_domestic_cases_sc_sn (dc_sc_sn),
   CONSTRAINT fk_domestic_cases_sc
-    FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn)
+    FOREIGN KEY (dc_sc_sn) REFERENCES sourcing_cases(sc_sn)
 ) COMMENT='국내 수급 케이스(시도 인스턴스)';
 
 
@@ -500,16 +499,16 @@ CREATE TABLE domestic_cases (
 -- ======================================================================
 CREATE TABLE overseas_cases (
   oc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '해외 수급 케이스 PK(시도 인스턴스)',
-  sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
+  oc_sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
   oc_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '현재 활성 케이스 여부(1=활성, 0=비활성/과거시도)',
   oc_closed_at DATETIME NULL COMMENT '종결일시(전환/중단 시, 업무 이벤트)',
   oc_note VARCHAR(500) NULL COMMENT '비고',
   oc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   oc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (oc_sn),
-  KEY idx_overseas_cases_sc (sc_sn),
+  KEY idx_overseas_cases_sc (oc_sc_sn),
   CONSTRAINT fk_overseas_cases_sc
-    FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn)
+    FOREIGN KEY (oc_sc_sn) REFERENCES sourcing_cases(sc_sn)
 ) COMMENT='해외 수급 케이스(시도 인스턴스)';
 
 
@@ -521,7 +520,7 @@ CREATE TABLE overseas_cases (
 -- ======================================================================
 CREATE TABLE inhouse_cases (
   ic_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '자체제작 케이스 PK(시도 인스턴스)',
-  sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
+  ic_sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
   ic_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '현재 활성 케이스 여부(1=활성, 0=비활성/과거시도)',
   ic_closed_at DATETIME NULL COMMENT '종결일시(전환/중단 시, 업무 이벤트)',
   ic_expected_margin_rate DECIMAL(5,2) NULL COMMENT '제작 후 납품시 남길 수익 마진률(%)',
@@ -529,9 +528,9 @@ CREATE TABLE inhouse_cases (
   ic_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ic_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ic_sn),
-  KEY idx_inhouse_cases_sc (sc_sn),
+  KEY idx_inhouse_cases_sc (ic_sc_sn),
   CONSTRAINT fk_inhouse_cases_sc
-    FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn)
+    FOREIGN KEY (ic_sc_sn) REFERENCES sourcing_cases(sc_sn)
 ) COMMENT='자체제작 케이스(시도 인스턴스)';
 
 
@@ -541,7 +540,7 @@ CREATE TABLE inhouse_cases (
 -- ======================================================================
 CREATE TABLE inhouse_bom_lines (
   ibl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '제작 BOM 라인 PK',
-  ic_sn BIGINT UNSIGNED NOT NULL COMMENT '자체제작 케이스 PK(inhouse_cases)',
+  ibl_ic_sn BIGINT UNSIGNED NOT NULL COMMENT '자체제작 케이스 PK(inhouse_cases)',
   ibl_item_name VARCHAR(255) NOT NULL COMMENT '자재명',
   ibl_item_qty DECIMAL(14,3) NOT NULL COMMENT '필요 수량',
   ibl_item_unit VARCHAR(20) NULL COMMENT '단위',
@@ -556,9 +555,9 @@ CREATE TABLE inhouse_bom_lines (
   ibl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ibl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ibl_sn),
-  KEY idx_inhouse_bom_ic (ic_sn),
+  KEY idx_inhouse_bom_ic (ibl_ic_sn),
   CONSTRAINT fk_inhouse_bom_ic
-    FOREIGN KEY (ic_sn) REFERENCES inhouse_cases(ic_sn)
+    FOREIGN KEY (ibl_ic_sn) REFERENCES inhouse_cases(ic_sn)
 ) COMMENT='자체제작 BOM(자재 소요)';
 
 
@@ -568,7 +567,7 @@ CREATE TABLE inhouse_bom_lines (
 -- ======================================================================
 CREATE TABLE inhouse_work_orders (
   iwo_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '제작 작업지시 PK',
-  ic_sn BIGINT UNSIGNED NOT NULL COMMENT '자체제작 케이스 PK(inhouse_cases)',
+  iwo_ic_sn BIGINT UNSIGNED NOT NULL COMMENT '자체제작 케이스 PK(inhouse_cases)',
   iwo_process_name VARCHAR(255) NOT NULL COMMENT '공정/작업명',
   iwo_status ENUM('TODO','DOING','DONE','BLOCKED','CANCELLED')
     NOT NULL COMMENT '작업 상태(ENUM) | TODO:대기, DOING:진행, DONE:완료, BLOCKED:이슈, CANCELLED:취소',
@@ -578,10 +577,10 @@ CREATE TABLE inhouse_work_orders (
   iwo_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   iwo_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (iwo_sn),
-  KEY idx_inhouse_work_orders_ic (ic_sn),
+  KEY idx_inhouse_work_orders_ic (iwo_ic_sn),
   KEY idx_inhouse_work_orders_status (iwo_status),
   CONSTRAINT fk_inhouse_work_orders_ic
-    FOREIGN KEY (ic_sn) REFERENCES inhouse_cases(ic_sn)
+    FOREIGN KEY (iwo_ic_sn) REFERENCES inhouse_cases(ic_sn)
 ) COMMENT='자체제작 작업지시/공정';
 
 
@@ -640,7 +639,7 @@ CREATE TABLE rfqs (
 -- ======================================================================
 CREATE TABLE rfq_lines (
   rfql_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 PK(업체에 보낸 실제 1줄) - 국내/해외 공용',
-  rfq_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs)',
+  rfql_rfq_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs)',
   rfql_no INT NOT NULL COMMENT 'RFQ 내 줄번호',
   rfql_g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
 
@@ -664,13 +663,11 @@ CREATE TABLE rfq_lines (
   rfql_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (rfql_sn),
-  UNIQUE KEY uk_rfq_lines (rfq_sn, rfql_no),
-  KEY idx_rfq_lines_rfq (rfq_sn),
+  UNIQUE KEY uk_rfq_lines (rfql_rfq_sn, rfql_no),
+  KEY idx_rfq_lines_rfq (rfql_rfq_sn),
   KEY idx_rfq_lines_g (rfql_g_sn),
-  KEY idx_rfq_lines_reply_status (reply_status),
-
-  CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfq_sn) REFERENCES rfqs(rfq_sn),
-  CONSTRAINT fk_rfq_lines_g FOREIGN KEY (g_sn) REFERENCES goods(g_sn)
+  CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfql_rfq_sn) REFERENCES rfqs(rfq_sn),
+  CONSTRAINT fk_rfq_lines_g FOREIGN KEY (rfql_g_sn) REFERENCES goods(g_sn)
 ) COMMENT='RFQ 라인(요청 1줄 + 회신 값(reply_*), 덮어쓰기 정책) - 국내/해외 통합';
 
 
@@ -779,7 +776,7 @@ CREATE TABLE purchase_orders (
 -- ======================================================================
 CREATE TABLE po_lines (
   pol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '발주서 라인 PK(업체에 보낸 실제 1줄) - 국내/해외 공용',
-  po_sn BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders)',
+  pol_po_sn BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders)',
   pol_no INT NOT NULL COMMENT '발주서 내 줄번호',
 
   /* 품목 */
@@ -805,12 +802,11 @@ CREATE TABLE po_lines (
   pol_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (pol_sn),
-  UNIQUE KEY uk_po_lines (po_sn, pol_no),
-  KEY idx_po_lines_po (po_sn),
+  UNIQUE KEY uk_po_lines (pol_po_sn, pol_no),
+  KEY idx_po_lines_po (pol_po_sn),
   KEY idx_po_lines_g (g_sn),
   KEY idx_po_lines_source_rfql (source_rfql_sn),
-
-  CONSTRAINT fk_po_lines_po FOREIGN KEY (po_sn) REFERENCES purchase_orders(po_sn),
+  CONSTRAINT fk_po_lines_po FOREIGN KEY (pol_po_sn) REFERENCES purchase_orders(po_sn),
   CONSTRAINT fk_po_lines_g FOREIGN KEY (g_sn) REFERENCES goods(g_sn),
   CONSTRAINT fk_po_lines_source_rfql FOREIGN KEY (source_rfql_sn) REFERENCES rfq_lines(rfql_sn)
 ) COMMENT='발주서 라인(PO 한줄) - 국내/해외 통합';
@@ -832,14 +828,13 @@ CREATE TABLE po_allocations (
   poa_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (poa_sn),
-  UNIQUE KEY uk_po_alloc (poa_pol_sn, poa_sc_sn),
-  KEY idx_po_alloc_pol (poa_pol_sn),
-  KEY idx_po_alloc_sc (poa_sc_sn),
-  KEY idx_po_alloc_olo (poa_olo_sn),
-
-  CONSTRAINT fk_po_alloc_pol FOREIGN KEY (pol_sn) REFERENCES po_lines(pol_sn),
-  CONSTRAINT fk_po_alloc_sc FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn),
-  CONSTRAINT fk_po_alloc_olo FOREIGN KEY (olo_sn) REFERENCES order_line_overrides(olo_sn)
+  UNIQUE KEY uk_po_alloc (pol_sn, sc_sn),
+  KEY idx_po_alloc_pol (pol_sn),
+  KEY idx_po_alloc_sc (sc_sn),
+  KEY idx_po_alloc_olo (olo_sn),
+  CONSTRAINT fk_po_alloc_pol FOREIGN KEY (pol_sn) REFERENCES po_lines(poa_pol_sn),
+  CONSTRAINT fk_po_alloc_sc FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(poa_sc_sn),
+  CONSTRAINT fk_po_alloc_olo FOREIGN KEY (olo_sn) REFERENCES order_line_overrides(poa_olo_sn)
     ON DELETE SET NULL
     ON UPDATE RESTRICT
 ) COMMENT='발주 라인 배분(여러 sc 혼합 PO 지원) - 국내/해외 통합';
