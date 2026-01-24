@@ -199,13 +199,13 @@
 
 권장 인덱스명 템플릿:
 - 단일 컬럼:
-  - `idx_{t}__{col}`
+  - `idx_{t}_{col}`
 - 복합 인덱스:
-  - `idx_{t}__{col1}__{col2}__...`
+  - `idx_{t}_{col1}_{col2}_...`
 - UNIQUE:
-  - `uq_{t}__{col1}__{col2}__...`
+  - `uq_{t}_{col1}_{col2}_...`
 - FK 제약:
-  - `fk_{t}__{col}__{ref}` 또는 `fk_{t}__{col}__{ref}_sn`
+  - `fk_{t}_{col}_{ref}` 또는 `fk_{t}_{col}_{ref}_sn`
 
 > `{t}`는 테이블 약어, `{col}`은 실제 컬럼명(전체)이다.
 
