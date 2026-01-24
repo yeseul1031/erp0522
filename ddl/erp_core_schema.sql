@@ -90,22 +90,22 @@ CREATE TABLE departments (
 -- ======================================================================
 CREATE TABLE assignees (
   a_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '담당자 PK',
-  d_sn BIGINT UNSIGNED NULL COMMENT '부서 PK',
+  a_d_sn BIGINT UNSIGNED NULL COMMENT '부서 PK',
   a_name VARCHAR(32) NOT NULL COMMENT '담당자 이름',
   a_email VARCHAR(128) NULL COMMENT '이메일',
   a_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '재직/활성 여부(1=활성, 0=비활성)',
   a_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   a_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (a_sn),
-  KEY idx_assignees_d_sn (d_sn),
+  KEY idx_assignees_a_d_sn (a_d_sn),
   KEY idx_assignees_email (a_email),
   CONSTRAINT fk_assignees_departments
-    FOREIGN KEY (d_sn) REFERENCES departments(d_sn)
+    FOREIGN KEY (a_d_sn) REFERENCES departments(d_sn)
 ) COMMENT='업무 담당자(직원/협업 담당자 공용)';
 
 ALTER TABLE departments
   ADD CONSTRAINT fk_departments_manager
-  FOREIGN KEY (manager_a_sn) REFERENCES assignees(a_sn);
+  FOREIGN KEY (d_manager_a_sn) REFERENCES assignees(a_sn);
 
 
 -- ======================================================================
@@ -114,18 +114,18 @@ ALTER TABLE departments
 -- ======================================================================
 CREATE TABLE parties (
   pt_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '업체/기관 PK',
-  party_type ENUM('CUSTOMER','VENDOR','FORWARDER','BROKER','OTHER')
+  pt_type ENUM('CUSTOMER','VENDOR','FORWARDER','BROKER','OTHER')
     NOT NULL COMMENT '업체 유형(ENUM) | CUSTOMER:고객사, VENDOR:공급사/판매사, FORWARDER:포워더/물류, BROKER:관세사/중개, OTHER:기타',
-  name VARCHAR(128) NOT NULL COMMENT '업체명',
-  country_code CHAR(2) NULL COMMENT '국가코드(ISO 2자리, 예: KR, US)',
-  biz_no VARCHAR(16) NULL COMMENT '사업자번호/등록번호',
-  contact_name VARCHAR(32) NULL COMMENT '담당자명',
-  contact_phone VARCHAR(16) NULL COMMENT '연락처',
-  contact_email VARCHAR(128) NULL COMMENT '이메일',
+  pt_name VARCHAR(128) NOT NULL COMMENT '업체명',
+  pt_country_code CHAR(2) NULL COMMENT '국가코드(ISO 2자리, 예: KR, US)',
+  pt_biz_no VARCHAR(16) NULL COMMENT '사업자번호/등록번호',
+  pt_contact_name VARCHAR(32) NULL COMMENT '담당자명',
+  pt_contact_phone VARCHAR(16) NULL COMMENT '연락처',
+  pt_contact_email VARCHAR(128) NULL COMMENT '이메일',
   pt_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pt_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (pt_sn),
-  KEY idx_parties_name (name)
+  KEY idx_parties_pt_name (pt_name)
 ) COMMENT='업체/기관(고객사/공급사/물류/중개 등)';
 
 
@@ -181,7 +181,7 @@ CREATE TABLE activity_logs (
 -- ======================================================================
 CREATE TABLE audit_changes (
   ac_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '변경 상세 PK',
-  al_sn BIGINT UNSIGNED NOT NULL COMMENT '행위 로그 PK(activity_logs)',
+  ac_al_sn BIGINT UNSIGNED NOT NULL COMMENT '행위 로그 PK(activity_logs)',
   ac_target_table VARCHAR(100) NOT NULL COMMENT '대상 테이블명',
   ac_target_pk BIGINT UNSIGNED NOT NULL COMMENT '대상 PK 값',
   ac_changed_fields_json JSON NOT NULL COMMENT '변경된 필드 diff(JSON: from/to)',
@@ -189,10 +189,10 @@ CREATE TABLE audit_changes (
   ac_after_json JSON NULL COMMENT '변경 후 스냅샷(JSON, 필요 시)',
   ac_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   PRIMARY KEY (ac_sn),
-  KEY idx_audit_changes_al (al_sn),
+  KEY idx_audit_changes_ac_al_sn (ac_al_sn),
   KEY idx_audit_changes_target (ac_target_table, ac_target_pk),
   CONSTRAINT fk_audit_changes_activity
-    FOREIGN KEY (al_sn) REFERENCES activity_logs(al_sn)
+    FOREIGN KEY (ac_al_sn) REFERENCES activity_logs(al_sn)
 ) COMMENT='변경 상세(diff/스냅샷)';
 
 
@@ -211,7 +211,7 @@ Balhea ERP - Documents Hub (documents + document_links) Extension v7.8.2
 - 배송 시스템 연동/상세 트래킹은 하지 않으며, 문서는 “업무 사건(Event)”과 “재무 근거(Fact)”에 연결하여 관리한다.
 - 비용 단계 근거는 shipment_milestone_cost_links(단계↔비용 링크)로 유지하며,
   문서는 해당 cost/payable/shipment/milestone/job 등에 document_links로 연결한다.
-- target_type/target_sn은 polymorphic 참조로 FK를 강제하지 않는다(운영 정책/검증으로 보장).
+- dl_target_type/target_sn은 polymorphic 참조로 FK를 강제하지 않는다(운영 정책/검증으로 보장).
 */
 
 /* 문서 허브: 모든 파일/서류는 여기로 수집 */
@@ -219,21 +219,21 @@ CREATE TABLE IF NOT EXISTS documents (
   doc_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'PK',
   doc_category VARCHAR(30) NOT NULL COMMENT '문서 카테고리(권장; 확장 가능): COST, PAYMENT, INVOICE, PURCHASE, DELIVERY, CUSTOMS, QUALITY, CONTRACT, TAX, SETTLEMENT, REFUND, OTHER',
   doc_type VARCHAR(40) NOT NULL COMMENT '문서 타입(권장 예시; 확장 가능): CASH_RECEIPT, SELLER_RECEIPT, CARD_APPROVAL, CARD_SLIP, BANK_TRANSFER_RECEIPT, BANK_TRANSFER_PROOF, TAX_INVOICE, STATEMENT, PURCHASE_DETAILS, BL, AWB, PACKING_LIST, CUSTOMS_DOC, DELIVERY_NOTE, DELIVERY_PROOF, SHIPMENT_PROOF, INSPECTION_REPORT, PHOTO, PLATFORM_SETTLEMENT, REFUND_PROOF, OTHER',
-  issuer_name VARCHAR(120) NULL COMMENT '발행처/제공처(거래처/포워더/관세사/창고/검사기관 등)',
-  issuer_party_sn BIGINT UNSIGNED NULL COMMENT 'parties.pt_sn (가능하면)',
+  doc_issuer_name VARCHAR(120) NULL COMMENT '발행처/제공처(거래처/포워더/관세사/창고/검사기관 등)',
+  doc_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT 'parties.pt_sn (가능하면)',
   doc_no VARCHAR(80) NULL COMMENT '문서번호(있으면)',
   doc_date DATE NULL COMMENT '문서일자(있으면)',
-  currency CHAR(3) NULL COMMENT '문서 금액 통화(있으면)',
-  amount DECIMAL(18,2) NULL COMMENT '문서 금액(있으면)',
-  tax_amount DECIMAL(18,2) NULL COMMENT '세액(있으면)',
-  file_key VARCHAR(255) NOT NULL COMMENT '파일 식별자(스토리지 경로/키)',
-  file_name VARCHAR(255) NULL COMMENT '원본 파일명(선택)',
-  mime_type VARCHAR(80) NULL COMMENT 'MIME 타입(선택)',
-  note VARCHAR(255) NULL COMMENT '비고',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
-  created_by_a_sn BIGINT UNSIGNED NULL COMMENT 'actors.a_sn (업로더/등록자)',
+  doc_currency CHAR(3) NULL COMMENT '문서 금액 통화(있으면)',
+  doc_amount DECIMAL(18,2) NULL COMMENT '문서 금액(있으면)',
+  doc_tax_amount DECIMAL(18,2) NULL COMMENT '세액(있으면)',
+  doc_file_key VARCHAR(255) NOT NULL COMMENT '파일 식별자(스토리지 경로/키)',
+  doc_file_name VARCHAR(255) NULL COMMENT '원본 파일명(선택)',
+  doc_mime_type VARCHAR(80) NULL COMMENT 'MIME 타입(선택)',
+  doc_note VARCHAR(255) NULL COMMENT '비고',
+  doc_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
+  doc_created_by_a_sn BIGINT UNSIGNED NULL COMMENT 'actors.a_sn (업로더/등록자)',
   KEY idx_doc_category_type (doc_category, doc_type),
-  KEY idx_doc_issuer_party (issuer_party_sn),
+  KEY idx_doc_issuer_pt_sn (doc_issuer_pt_sn),
   KEY idx_doc_docno (doc_no),
   KEY idx_doc_date (doc_date)
 ) COMMENT='문서 허브: 모든 증빙/서류/파일을 단일 테이블로 저장. 업무/재무/물류 엔티티와의 연결은 document_links로만 표현(엔티티별 문서 테이블 금지).';
@@ -242,25 +242,25 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE TABLE IF NOT EXISTS document_links (
   dl_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'PK',
   doc_sn BIGINT UNSIGNED NOT NULL COMMENT 'documents.doc_sn',
-  target_type VARCHAR(30) NOT NULL COMMENT '연결 대상 타입(권장; 확장 가능): PROJECT, CONTRACT, ORDER, ORDER_LINE, SOURCING_CASE, RFQ, PURCHASE_ORDER(PO), PO_LINE, COST, PAYABLE, PAYMENT, INVOICE, DELIVERY, DELIVERY_LINE, SHIPMENT, SHIPMENT_MILESTONE, JOB, JOB_STOP, INVENTORY_UNIT, OTHER',
-  target_sn BIGINT UNSIGNED NOT NULL COMMENT '연결 대상 PK (type별로 의미)',
-  link_role VARCHAR(30) NOT NULL DEFAULT 'EVIDENCE' COMMENT '연결 역할: EVIDENCE(근거), PROOF(완료증빙), REFERENCE(참고), REQUEST(요청서), OUTPUT(산출물)',
-  note VARCHAR(255) NULL COMMENT '비고',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
-  UNIQUE KEY uk_dl_doc_target (doc_sn, target_type, target_sn, link_role),
-  KEY idx_dl_target (target_type, target_sn),
+  dl_target_type VARCHAR(30) NOT NULL COMMENT '연결 대상 타입(권장; 확장 가능): PROJECT, CONTRACT, ORDER, ORDER_LINE, SOURCING_CASE, RFQ, PURCHASE_ORDER(PO), PO_LINE, COST, PAYABLE, PAYMENT, INVOICE, DELIVERY, DELIVERY_LINE, SHIPMENT, SHIPMENT_MILESTONE, JOB, JOB_STOP, INVENTORY_UNIT, OTHER',
+  dl_target_sn BIGINT UNSIGNED NOT NULL COMMENT '연결 대상 PK (type별로 의미)',
+  dl_link_role VARCHAR(30) NOT NULL DEFAULT 'EVIDENCE' COMMENT '연결 역할: EVIDENCE(근거), PROOF(완료증빙), REFERENCE(참고), REQUEST(요청서), OUTPUT(산출물)',
+  dl_note VARCHAR(255) NULL COMMENT '비고',
+  dl_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
+  UNIQUE KEY uk_dl_doc_dl_target (doc_sn, dl_target_type, dl_target_sn, dl_link_role),
+  KEY idx_dl_dl_target (dl_target_type, dl_target_sn),
   CONSTRAINT fk_dl_doc FOREIGN KEY (doc_sn) REFERENCES documents(doc_sn)
-) COMMENT='문서 ↔ 업무/재무/물류 엔티티 연결(다대다, polymorphic). target_type+target_sn 유효성은 애플리케이션에서 검증.';
+) COMMENT='문서 ↔ 업무/재무/물류 엔티티 연결(다대다, polymorphic). dl_target_type+dl_target_sn 유효성은 애플리케이션에서 검증.';
 
 /* 선택: 문서 간 관계(원본/정정/대체/첨부 묶음) */
 CREATE TABLE IF NOT EXISTS document_relations (
   dr_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'PK',
-  parent_doc_sn BIGINT UNSIGNED NOT NULL COMMENT '상위/원본 documents.doc_sn',
-  child_doc_sn BIGINT UNSIGNED NOT NULL COMMENT '하위/첨부/정정 documents.doc_sn',
-  relation_type VARCHAR(30) NOT NULL COMMENT '관계: ATTACHMENT, REVISION, REPLACEMENT, TRANSLATION, BUNDLE_MEMBER',
-  note VARCHAR(255) NULL COMMENT '비고',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
-  UNIQUE KEY uk_dr_parent_child (parent_doc_sn, child_doc_sn, relation_type),
-  CONSTRAINT fk_dr_parent FOREIGN KEY (parent_doc_sn) REFERENCES documents(doc_sn),
-  CONSTRAINT fk_dr_child FOREIGN KEY (child_doc_sn) REFERENCES documents(doc_sn)
+  dr_parent_doc_sn BIGINT UNSIGNED NOT NULL COMMENT '상위/원본 documents.doc_sn',
+  dr_child_doc_sn BIGINT UNSIGNED NOT NULL COMMENT '하위/첨부/정정 documents.doc_sn',
+  dr_relation_type VARCHAR(30) NOT NULL COMMENT '관계: ATTACHMENT, REVISION, REPLACEMENT, TRANSLATION, BUNDLE_MEMBER',
+  dr_note VARCHAR(255) NULL COMMENT '비고',
+  dr_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
+  UNIQUE KEY uk_dr_parent_child (dr_parent_doc_sn, dr_child_doc_sn, dr_relation_type),
+  CONSTRAINT fk_dr_parent FOREIGN KEY (dr_parent_doc_sn) REFERENCES documents(doc_sn),
+  CONSTRAINT fk_dr_child FOREIGN KEY (dr_child_doc_sn) REFERENCES documents(doc_sn)
 ) COMMENT='문서 간 관계(첨부/정정/대체/묶음 등)';
