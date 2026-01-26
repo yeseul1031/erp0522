@@ -390,7 +390,7 @@ CREATE TABLE sourcing_case_lines (
     'QUALITY_PROCESS',
     'DELIVERY_SUPPORT',
     'OTHER'
-  ) NOT NULL DEFAULT 'scl_purpose_code (조달 목적/의도)
+  ) NOT NULL COMMENT 'scl_purpose_code (조달 목적/의도)
 - FULFILL_ORDER_LINE : 특정 order_line을 충족하기 위한 조달
 - UPGRADE_TO_MEET_SPEC : 스펙 충족을 위한 업그레이드/추가 구매(예: RAM 추가)
 - SUBSTITUTE          : 대체품(원래 품목이 단종/미판매 등으로 대체)
@@ -541,10 +541,6 @@ CREATE TABLE inhouse_cases (
 CREATE TABLE inhouse_bom_lines (
   ibl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '제작 BOM 라인 PK',
   ibl_ic_sn BIGINT UNSIGNED NOT NULL COMMENT '자체제작 케이스 PK(inhouse_cases)',
-  ibl_item_name VARCHAR(255) NOT NULL COMMENT '자재명',
-  ibl_item_qty DECIMAL(14,3) NOT NULL COMMENT '필요 수량',
-  ibl_item_unit VARCHAR(20) NULL COMMENT '단위',
-
   ibl_item_name VARCHAR(128) NOT NULL COMMENT '(자체제작) 품목명(예: 십자 드라이버)',
   ibl_item_spec JSON NULL COMMENT '(자체제작) 규격/조건(자유형 JSON)',
   ibl_item_qty DECIMAL(14,3) NOT NULL COMMENT '(자체제작) 수량',
