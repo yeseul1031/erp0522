@@ -212,6 +212,27 @@ Balhea ERP - Documents Hub (documents + document_links) Extension v7.8.2
 - 비용 단계 근거는 shipment_milestone_cost_links(단계↔비용 링크)로 유지하며,
   문서는 해당 cost/payable/shipment/milestone/job 등에 document_links로 연결한다.
 - dl_target_type/target_sn은 polymorphic 참조로 FK를 강제하지 않는다(운영 정책/검증으로 보장).
+
+아래 코드는 DDL의 `documents.doc_type`, `documents.doc_type`에 사용되는 **표준 코드**다.
+
+| 코드 | 설명 |
+|---|---|
+| CASH_RECEIPT | 현금영수증 |
+| CARD_RECEIPT | 카드 매출전표/영수증(항목 명세가 포함된 경우) |
+| CARD_APPROVAL | 카드 승인 내역(승인번호/금액/일시 등 지급 사실) |
+| BANK_TRANSFER_RECEIPT | 계좌이체 영수증/송금확인(지급 사실) |
+| INVOICE_TAX | 세금계산서(전자/종이) |
+| INVOICE | 청구서/인보이스(지급요청서 성격) |
+| STATEMENT | 거래명세서/지급요청서(여러 발주 묶음 가능) |
+| PURCHASE_DETAILS | 구매명세서/구매항목정보(셀러별 N개 가능) |
+| DELIVERY_NOTE | 납품서/인수증/검수확인서 |
+| SHIPMENT_PROOF | 운송장/배송내역/송장(B/L 등) |
+| PLATFORM_SETTLEMENT | 플랫폼/PG 정산서(수수료/차감 포함) |
+| REFUND_PROOF | 환불/취소 증빙(카드취소전표 등) |
+| CARD_STATEMENT | 카드사 청구서(월 단위) |
+| OTHER | 기타(자유 입력; note에 상세 기재) |
+
+
 */
 
 /* 문서 허브: 모든 파일/서류는 여기로 수집 */
