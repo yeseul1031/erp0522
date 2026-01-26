@@ -169,10 +169,14 @@ CREATE TABLE activity_logs (
   KEY idx_activity_logs_project (al_p_sn),
   KEY idx_activity_logs_target (al_target_table, al_target_pk),
   CONSTRAINT fk_activity_logs_actor
-    FOREIGN KEY (al_actor_a_sn) REFERENCES assignees(a_sn),
-  CONSTRAINT fk_activity_logs_project
-    FOREIGN KEY (al_p_sn) REFERENCES projects(p_sn)
+    FOREIGN KEY (al_actor_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='행위 로그(요약)';
+
+-- 이건 나중에 projects 생성하고 넣기
+ALTER TABLE activity_logs
+  ADD CONSTRAINT fk_activity_logs_project
+  FOREIGN KEY (al_p_sn) REFERENCES projects(p_sn);
+
 
 
 -- ======================================================================

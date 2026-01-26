@@ -457,7 +457,7 @@ CREATE TABLE sourcing_case_lines (
 
   -- 아래 FK들은 테이블 존재/최종 스키마에 따라 활성화.
   -- order_line_overrides,
-  goods 테이블이 core schema에 존재하는 경우 활성화 권장.
+  -- goods 테이블이 core schema에 존재하는 경우 활성화 권장.
   CONSTRAINT fk_scl_ol
     FOREIGN KEY (scl_ol_sn) REFERENCES order_lines(ol_sn),
 
@@ -832,9 +832,9 @@ CREATE TABLE po_allocations (
   KEY idx_po_alloc_pol (pol_sn),
   KEY idx_po_alloc_sc (sc_sn),
   KEY idx_po_alloc_olo (olo_sn),
-  CONSTRAINT fk_po_alloc_pol FOREIGN KEY (pol_sn) REFERENCES po_lines(poa_pol_sn),
-  CONSTRAINT fk_po_alloc_sc FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(poa_sc_sn),
-  CONSTRAINT fk_po_alloc_olo FOREIGN KEY (olo_sn) REFERENCES order_line_overrides(poa_olo_sn)
+  CONSTRAINT fk_po_alloc_pol FOREIGN KEY (pol_sn) REFERENCES po_lines(pol_sn),
+  CONSTRAINT fk_po_alloc_sc FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn),
+  CONSTRAINT fk_po_alloc_olo FOREIGN KEY (olo_sn) REFERENCES order_line_overrides(olo_sn)
     ON DELETE SET NULL
     ON UPDATE RESTRICT
 ) COMMENT='발주 라인 배분(여러 sc 혼합 PO 지원) - 국내/해외 통합';
