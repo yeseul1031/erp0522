@@ -322,7 +322,7 @@ RFQ/PO는 단일 테이블로 통합하는 것이 장기적으로 단순하다.
 - `purchase_orders` / `po_lines` / `po_allocations`
 - 국내/해외 공통 필드: 업체, 작성자, 상태, 발행/수락, 납기, 결제/부가세
 - 해외 옵션 필드: `trade_terms`, `ship_from_country`, `ship_to_country`
-- 해외 통화는 라인 단위 `po_lines.currency`로 관리(국내는 기본 KRW)
+- 해외 통화는 라인 단위 `po_lines.ccy`로 관리(국내는 기본 KRW)
 
 ### B-3. 국내/해외 구분 정책
 
@@ -333,9 +333,9 @@ RFQ/PO는 단일 테이블로 통합하는 것이 장기적으로 단순하다.
 #### B-3.2 필수/옵션 규칙(권장)
 - DOMESTIC:
   - `ship_from_country/ship_to_country/trade_terms`는 NULL 허용
-  - `po_lines.currency`는 KRW 사용 권장
+  - `po_lines.ccy`는 KRW 사용 권장
 - OVERSEAS:
-  - `po_lines.currency`는 실제 매입 통화로 입력(USD/EUR/CNY 등)
+  - `po_lines.ccy`는 실제 매입 통화로 입력(USD/EUR/CNY 등)
   - `trade_terms`는 가능하면 입력(인도조건)
   - 환율/원화 환산이 필요한 비용은 `cost_fx_applications`로 고정
 
@@ -360,14 +360,14 @@ RFQ/PO는 단일 테이블로 통합하는 것이 장기적으로 단순하다.
 
 #### B-5.1 국내 RFQ → PO
 - `rfqs.sourcing_type = DOMESTIC` (또는 NULL)
-- `rfq_lines.reply_currency = 'KRW'`
+- `rfq_lines.reply_ccy = 'KRW'`
 - `purchase_orders.po_status` 전개: DRAFT → SENT → ACCEPTED
 
 #### B-5.2 해외 PO + 비용(USD) + 환율 고정
-- `po_lines.currency = 'USD'`
+- `po_lines.ccy = 'USD'`
 - 통관비/포워딩 비용을 `costs`에 등록(통화 USD)
 - 정산 시점 환율을 `cost_fx_applications`에 저장:
-  - `src_currency='USD'`, `src_amount=...`, `applied_fx_rate=...`, `base_amount(KRW)=...`
+  - `src_ccy='USD'`, `src_amount=...`, `applied_fx_rate=...`, `base_amount(KRW)=...`
 
 ---
 

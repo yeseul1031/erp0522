@@ -151,7 +151,7 @@ override가 없으면 default goods를 사용한다.
 
 - RFQ: `rfqs` / `rfq_lines` / `rfq_allocations`
 - PO: `purchase_orders` / `po_lines` / `po_allocations`
-- 해외 옵션(필요 시만): `trade_terms`, `ship_from_country`, `ship_to_country`, 라인 통화(`po_lines.currency`) 등
+- 해외 옵션(필요 시만): `trade_terms`, `ship_from_country`, `ship_to_country`, 라인 통화(`po_lines.ccy`) 등
 
 #### 소스 오브 트루스(중요)
 국내/해외 구분의 최종 기준은 **`sourcing_cases.sourcing_type`** 이다.  

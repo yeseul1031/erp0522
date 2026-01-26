@@ -95,7 +95,7 @@ CREATE TABLE costs (
   ct_pt_sn BIGINT UNSIGNED NULL COMMENT '지출 대상 업체 PK(parties)',
   ct_occurred_at DATETIME NOT NULL COMMENT '지출 발생일시(업무 이벤트)',
   ct_amount DECIMAL(18,2) NOT NULL COMMENT '비용 금액',
-  ct_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
+  ct_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
   ct_note VARCHAR(500) NULL COMMENT '비용 설명',
   ct_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
   ct_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -131,7 +131,7 @@ CREATE TABLE bank_accounts (
 
   -- 해외 송금 대응(필요 시에만 입력)
   bk_country_code CHAR(2) NULL COMMENT '국가코드(ISO 3166-1 alpha-2; 예: KR, US)',
-  bk_currency_code CHAR(3) NULL COMMENT '통화코드(ISO 4217; 예: KRW, USD)',
+  bk_ccy CHAR(3) NULL COMMENT '통화코드(ISO 4217; 예: KRW, USD)',
   bk_swift_bic VARCHAR(20) NULL COMMENT 'SWIFT/BIC(해외송금; 예: BOFAUS3N)',
   bk_iban VARCHAR(34) NULL COMMENT 'IBAN(해외; EU 등)',
   bk_routing_number VARCHAR(32) NULL COMMENT 'Routing/ABA/Sort code 등 지역별 은행코드',
@@ -173,7 +173,7 @@ CREATE TABLE payments (
 
   pay_paid_at DATETIME NOT NULL COMMENT '지급 완료일시(업무 이벤트)',
   pay_amount DECIMAL(18,2) NOT NULL COMMENT '지급 금액',
-  pay_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
+  pay_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
   pay_ref_no VARCHAR(32) NULL COMMENT '참조번호(카드 승인번호/이체 거래번호 등)',
   pay_note VARCHAR(500) NULL COMMENT '메모',
   pay_data_json JSON NULL COMMENT '추가 메타(JSON)',
@@ -440,7 +440,7 @@ CREATE TABLE invoices (
   inv_issued_at DATETIME NULL COMMENT '문서 발행일시(업무 이벤트)',
   inv_due_at DATE NULL COMMENT '문서상 지급기한(있으면)',
 
-  inv_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '문서 통화',
+  inv_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '문서 통화',
   inv_subtotal_amount DECIMAL(18,2) NULL COMMENT '공급가액/소계(있으면)',
   inv_tax_amount DECIMAL(18,2) NULL COMMENT '세액(있으면)',
   inv_total_amount DECIMAL(18,2) NOT NULL COMMENT '총액',
@@ -488,7 +488,7 @@ CREATE TABLE invoice_lines (
   invl_qty DECIMAL(14,3) NULL COMMENT '수량(있으면)',
   invl_unit_price DECIMAL(18,2) NULL COMMENT '단가(있으면)',
   invl_amount DECIMAL(18,2) NOT NULL COMMENT '라인 금액(할인 등은 음수 가능)',
-  invl_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '라인 통화(기본: invoices.currency)',
+  invl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '라인 통화(기본: invoices.ccy)',
 
   invl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   invl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -540,7 +540,7 @@ CREATE TABLE payables (
   pbl_approved_at DATETIME NULL COMMENT '승인일시(업무 이벤트)',
   pbl_due_at DATE NULL COMMENT '지급 예정/기한(업무 이벤트)',
 
-  pbl_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급 통화',
+  pbl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급 통화',
   pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '지급 대상 총액(업무 기준)',
 
   /* 편의 필드(선택): payments 합산으로도 계산 가능 */

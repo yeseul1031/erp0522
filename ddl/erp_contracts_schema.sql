@@ -108,7 +108,7 @@ CREATE TABLE projects (
   p_contract_no VARCHAR(32) NULL COMMENT '계약서 번호(외부 식별자, 계약 전 NULL 가능)',
   p_signed_at DATE NULL COMMENT '계약 체결일(계약 전 NULL 가능)',
   p_contract_amount DECIMAL(18,2) NULL COMMENT '계약 총액(계약 전 NULL 가능)',
-  p_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
+  p_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
   p_status ENUM('PRE_CONTRACT','ACTIVE','CLOSED','CANCELLED')
     NOT NULL COMMENT '프로젝트 상태(ENUM) | PRE_CONTRACT:계약전/입찰검토, ACTIVE:진행, CLOSED:종료, CANCELLED:취소',
   p_a_sn BIGINT UNSIGNED NOT NULL COMMENT '현재 프로젝트 담당자 PK(assignees)',
@@ -593,7 +593,7 @@ CREATE TABLE rfqs (
 
   /* 수급 케이스 연결 */
   rfq_primary_sc_sn BIGINT UNSIGNED NULL COMMENT '대표 수급 케이스 PK(sourcing_cases) | 단독 진행이면 설정, 혼합 RFQ면 NULL 가능',
-  rfq_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
+  rfq_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
 
   /* 업체/작성자 */
   rfq_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '대상 업체 PK(parties)',
@@ -785,7 +785,7 @@ CREATE TABLE po_lines (
 
   /* 가격/통화(해외 포함) */
   pol_unit_cost DECIMAL(18,2) NULL COMMENT '발주 단가(확정값)',
-  pol_currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '발주 통화(예: KRW, USD)',
+  pol_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '발주 통화(예: KRW, USD)',
 
   pol_note VARCHAR(500) NULL COMMENT '라인 특이사항/요청사항(업체 전달용)',
 

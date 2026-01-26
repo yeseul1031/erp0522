@@ -70,7 +70,7 @@
 - `purchase_orders`
   - (po_sn=5001) vendor_pt_sn=3002, sourcing_type='DOMESTIC', po_status='SENT', po_kind='NORMAL'
 - `po_lines`
-  - (pol_sn=5101) po_sn=5001, line_no=1, g_sn=2001, po_qty=10, unit_price=..., currency='KRW'
+  - (pol_sn=5101) po_sn=5001, line_no=1, g_sn=2001, po_qty=10, unit_price=..., ccy='KRW'
   - (선택) source_rfq_line: pol이 어떤 rfql에서 왔는지 추적 컬럼이 있으면 함께 채움(정책/DDL에 따름)
 - `po_allocations`
   - (poa_sn=5111) pol_sn=5101, sc_sn=9001, olo_sn=NULL, allocated_qty=10
@@ -169,7 +169,7 @@
   가격 비교/원가 산출이 가능하게 한다.
 
 #### 부대 비용 귀속 예(모니터 검사비)
-- `costs`: (ct_sn=7301) cost_type='SERVICE', amount=120,000, currency='KRW', description='모니터 품질검사서 발급'
+- `costs`: (ct_sn=7301) cost_type='SERVICE', amount=120,000, ccy='KRW', description='모니터 품질검사서 발급'
 - `cost_allocations`: (ca_sn=...) ct_sn=7301, sc_sn=9201, olo_sn=3202, allocated_amount=120,000, note='모니터 검사비'
 
 ---
@@ -186,20 +186,20 @@
 
 1) 샘플 PO
 - `purchase_orders`: (po_sn=9002) vendor_pt_sn=401, sourcing_type='OVERSEAS', po_kind='SAMPLE', po_status='SENT'
-- `po_lines`: (pol_sn=9102) po_qty=2, currency='USD', is_sample=1, sample_disposition='DISCARD'
+- `po_lines`: (pol_sn=9102) po_qty=2, ccy='USD', is_sample=1, sample_disposition='DISCARD'
 - `po_allocations`: (poa_sn=...) sc_sn=5002, allocated_qty=2
 
 2) 본발주 PO
 - `purchase_orders`: (po_sn=9003) po_kind='NORMAL'
-- `po_lines`: (pol_sn=9103) po_qty=100, currency='USD', is_sample=0
+- `po_lines`: (pol_sn=9103) po_qty=100, ccy='USD', is_sample=0
 - `po_allocations`: (poa_sn=...) allocated_qty=100
 
 3) 해외 비용(USD) + 환율 고정(감사 재현)
-- `costs`: (ct_sn=8101) cost_type='CUSTOMS', amount=300, currency='USD', occurred_at='2026-01-18', description='통관비(USD)'
+- `costs`: (ct_sn=8101) cost_type='CUSTOMS', amount=300, ccy='USD', occurred_at='2026-01-18', description='통관비(USD)'
 - (선택) `po_cost_links`: (pcl_sn=...) po_sn=9003, ct_sn=8101
 - `cost_allocations`: (ca_sn=...) ct_sn=8101, sc_sn=5002, ol_sn=1002, allocated_amount=300
 - `cost_fx_applications`:
-  - src_currency='USD', src_amount=300, applied_fx_rate=1,350.00, as_of_dt='2026-01-18', base_amount=405,000(KRW)
+  - src_ccy='USD', src_amount=300, applied_fx_rate=1,350.00, as_of_dt='2026-01-18', base_amount=405,000(KRW)
 
 #### 상황 B: 샘플 2개 내부 보관(납품 제외) → 잔량 98개만 본발주
 - 샘플 PO: sample_disposition='KEEP_INTERNAL', po_qty=2
@@ -295,13 +295,13 @@
 - (pt_sn=90000001) name='네이버(정산 주체)'
 
 `costs`
-- (ct_sn=7001) vendor_pt_sn=90000001, occurred_at='2026-01-15 10:00', amount=3,240,000, currency='KRW', description='네이버 구매(여러 셀러 합산)'
+- (ct_sn=7001) vendor_pt_sn=90000001, occurred_at='2026-01-15 10:00', amount=3,240,000, ccy='KRW', description='네이버 구매(여러 셀러 합산)'
 
 (선택) `cost_allocations`
 - 단일 ol 전액 or 여러 ol 분할(N줄)
 
 `payments`
-- (pay_sn=9001) pay_method='CARD', pay_status='PAID', payee_pt_sn=90000001, paid_at='2026-01-15 10:01', amount=3,240,000, currency='KRW', ref_no='CARD-APPROVAL-1234'
+- (pay_sn=9001) pay_method='CARD', pay_status='PAID', payee_pt_sn=90000001, paid_at='2026-01-15 10:01', amount=3,240,000, ccy='KRW', ref_no='CARD-APPROVAL-1234'
 
 `payment_lines`
 - (pyl_sn=...) pay_sn=9001, ct_sn=7001, paid_amount=3,240,000, note='일괄 결제'
@@ -326,13 +326,13 @@
 - (pt_sn=90000099) name='퀵/대행(예약 거래처)'
 
 `costs`
-- (ct_sn=7101) cost_type='SHIPPING', vendor_pt_sn=90000099, occurred_at='2026-01-15 14:30', amount=18,000, currency='KRW', description='긴급 퀵 배송'
+- (ct_sn=7101) cost_type='SHIPPING', vendor_pt_sn=90000099, occurred_at='2026-01-15 14:30', amount=18,000, ccy='KRW', description='긴급 퀵 배송'
 
 `cost_allocations`
 - (ca_sn=...) ct_sn=7101, sc_sn=9001, ol_sn=1001, olo_sn=NULL, allocated_amount=18,000, note='드라이버 납품용 퀵'
 
 `payments`
-- (pay_sn=70002) pay_method='TRANSFER', pay_status='PAID', paid_at='2026-01-16 18:00', amount=18,000, currency='KRW'
+- (pay_sn=70002) pay_method='TRANSFER', pay_status='PAID', paid_at='2026-01-16 18:00', amount=18,000, ccy='KRW'
 
 `payment_lines`
 - (pyl_sn=...) pay_sn=70002, ct_sn=7101, paid_amount=18,000
