@@ -223,7 +223,6 @@ CREATE TABLE inventory_units (
 CREATE TABLE delivery_requests (
   dr_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '배송 협의/요청 PK | 협의가 필요한 케이스에서 사용',
   dr_p_sn BIGINT UNSIGNED NULL COMMENT '프로젝트 PK(projects) | 선택',
-  dr_o_sn BIGINT UNSIGNED NULL COMMENT '주문 PK(orders) | 선택',
 
   dr_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees)',
   dr_pt_sn BIGINT UNSIGNED NULL COMMENT '협의 상대(물류/업체) PK(parties) | 내부 수행이면 NULL 가능',
@@ -242,14 +241,11 @@ CREATE TABLE delivery_requests (
 
   PRIMARY KEY (dr_sn),
   KEY idx_delivery_requests_p (dr_p_sn),
-  KEY idx_delivery_requests_o (dr_o_sn),
   KEY idx_delivery_requests_requester (dr_a_sn),
   KEY idx_delivery_requests_vendor (dr_pt_sn),
   KEY idx_delivery_requests_status (dr_status),
 
   CONSTRAINT fk_delivery_requests_p FOREIGN KEY (dr_p_sn) REFERENCES projects(p_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT,
-  CONSTRAINT fk_delivery_requests_o FOREIGN KEY (dr_o_sn) REFERENCES orders(o_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_delivery_requests_requester FOREIGN KEY (dr_a_sn) REFERENCES assignees(a_sn),
   CONSTRAINT fk_delivery_requests_vendor FOREIGN KEY (dr_pt_sn) REFERENCES parties(pt_sn)

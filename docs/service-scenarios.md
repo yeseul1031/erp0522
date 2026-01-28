@@ -41,12 +41,11 @@
 1) `goods`
 - (g_sn=2001) goods_name='십자 드라이버 6인치'
 
-2) `projects`, `orders`
+2) `projects`
 - (p_sn=100) 프로젝트/계약
-- (o_sn=500) 주문서 (p_sn=100)
 
 3) `order_lines`
-- (ol_sn=1001) o_sn=500, line_no=1, requirement_name='드라이버', qty_required=10, **ol_default_g_sn=2001**
+- (ol_sn=1001) p_sn=100, line_no=1, requirement_name='드라이버', qty_required=10, **ol_default_g_sn=2001**
 
 4) `sourcing_cases`
 - (sc_sn=9001) ol_sn=1001, sourcing_type='DOMESTIC', sc_status='OPEN'

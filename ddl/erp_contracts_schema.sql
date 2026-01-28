@@ -101,9 +101,9 @@
 -- ======================================================================
 CREATE TABLE projects (
   p_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '프로젝트(=계약 통합) PK',
-  p_name VARCHAR(128) NOT NULL COMMENT '프로젝트명',
+  p_name VARCHAR(128) NOT NULL COMMENT '프로젝트명, 업체명+공고명+연도 등으로 조합해서 만들기',
   p_type ENUM('TENDER','DIRECT','FRAME')
-    NOT NULL COMMENT '프로젝트 유형(ENUM) | TENDER:입찰(공공/민간), DIRECT:직접계약, FRAME:기간/다건 계약(프레임/콜오프)',
+    NOT NULL COMMENT '프로젝트 유형(ENUM) | TENDER:입찰(공공/민간), DIRECT:직접계약(수의), FRAME:기간/다건 계약(프레임/콜오프, 여러 주문서 생성)',
   p_customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객사 PK(parties)',
   p_contract_no VARCHAR(32) NULL COMMENT '계약서 번호(외부 식별자, 계약 전 NULL 가능)',
   p_signed_at DATE NULL COMMENT '계약 체결일(계약 전 NULL 가능)',
@@ -111,9 +111,16 @@ CREATE TABLE projects (
   p_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
   p_status ENUM('PRE_CONTRACT','ACTIVE','CLOSED','CANCELLED')
     NOT NULL COMMENT '프로젝트 상태(ENUM) | PRE_CONTRACT:계약전/입찰검토, ACTIVE:진행, CLOSED:종료, CANCELLED:취소',
+  p_assign_status VARCHAR(2) NULL COMMENT '담당자 지정상태 , RR=담당자지정 / RO=담당자확인 / RC=견적확인요청 / BP=투찰진행 / DR=진행중단(취소) / PR=낙찰시담당자지정 / PO=담당자확인(낙찰시) / PC=완료',
   p_a_sn BIGINT UNSIGNED NOT NULL COMMENT '현재 프로젝트 담당자 PK(assignees)',
   p_started_at DATETIME NULL COMMENT '프로젝트 시작일시(업무 이벤트)',
   p_ended_at DATETIME NULL COMMENT '프로젝트 종료일시(업무 이벤트)',
+  p_delivery_dt DATETIME NULL COMMENT '납기일시',
+  p_delivery_dt_str VARCHAR(128) NOT NULL DEFAULT '' COMMENT '납기일시 문자열',
+  p_contractor VARCHAR(60) NOT NULL DEFAULT '' COMMENT '계약자',
+  p_site_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '현장명',
+  p_ba_nego_price INT NOT NULL DEFAULT 0 COMMENT '공고처 네고금액 +/- 가능',
+  p_ba_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '네고 사유',
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (p_sn),
@@ -125,33 +132,6 @@ CREATE TABLE projects (
   CONSTRAINT fk_projects_manager
     FOREIGN KEY (p_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='프로젝트(=계약)';
-
-
--- ======================================================================
--- TABLE: orders
--- DESC : 주문서(프로젝트 하위)
--- ======================================================================
-CREATE TABLE orders (
-  o_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문서 PK',
-  o_p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects)',
-  o_no VARCHAR(32) NULL COMMENT '주문서 번호(외부/내부 식별용)',
-  o_type ENUM('CONTRACT_ORDER','PRE_CONTRACT_ORDER')
-    NOT NULL DEFAULT 'CONTRACT_ORDER'
-    COMMENT '주문서 유형(ENUM) | CONTRACT_ORDER:실제 주문서, PRE_CONTRACT_ORDER:계약전(입찰검토/사전견적) 용도',
-  o_status ENUM('OPEN','IN_PROGRESS','CLOSED','CANCELLED')
-    NOT NULL COMMENT '주문서 상태(ENUM) | OPEN:오픈, IN_PROGRESS:진행, CLOSED:종결, CANCELLED:취소',
-  o_ordered_at DATETIME NULL COMMENT '주문서 생성/접수 일시(업무 이벤트)',
-  o_due_date DATE NULL COMMENT '납품 예정일(업무 이벤트)',
-  o_note VARCHAR(500) NULL COMMENT '메모',
-  o_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  o_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-  PRIMARY KEY (o_sn),
-  KEY idx_orders_p_sn (o_p_sn),
-  KEY idx_orders_status (o_status),
-  CONSTRAINT fk_orders_projects
-    FOREIGN KEY (o_p_sn) REFERENCES projects(p_sn)
-) COMMENT='주문서(프로젝트 하위)';
-
 
 -- ======================================================================
 -- TABLE: order_lines
@@ -179,7 +159,7 @@ CREATE TABLE orders (
 
 CREATE TABLE order_lines (
   ol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문라인 PK',
-  ol_o_sn BIGINT UNSIGNED NOT NULL COMMENT '주문서 PK(orders)',
+  ol_p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects)',
   ol_no INT NOT NULL COMMENT '주문서 내 라인 번호',
 
   web_item_name VARCHAR(128) NOT NULL COMMENT '(사이트상) 요구 품목명(예: 십자 드라이버)',
@@ -206,11 +186,11 @@ CREATE TABLE order_lines (
   ol_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ol_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ol_sn),
-  UNIQUE KEY uk_order_lines_order_line_no (ol_o_sn, ol_no),
-  KEY idx_order_lines_o_sn (ol_o_sn),
+  UNIQUE KEY uk_order_lines_order_line_no (ol_p_sn, ol_no),
+  KEY idx_order_lines_o_sn (ol_p_sn),
   KEY idx_order_lines_status (ol_status),
   CONSTRAINT fk_order_lines_orders
-    FOREIGN KEY (ol_o_sn) REFERENCES orders(o_sn)
+    FOREIGN KEY (ol_p_sn) REFERENCES projects(p_sn)
 ) COMMENT='주문라인(고객 요구/납품 약속 단위)';
 
 

@@ -65,7 +65,7 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 ### 3.1 End-to-End 흐름(개념)
 대표적인 정본 흐름(국내/해외 공통)은 아래와 같다.
 
-`projects` → `orders` → `order_lines`
+`projects` → `order_lines`
 (+ 필요 시 `order_line_overrides`)
 → `sourcing_cases`
 → `rfqs` / `rfq_lines` / `rfq_allocations`
@@ -76,8 +76,13 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 
 ### 3.2 프로젝트/주문/주문라인
 - **projects**: 계약 단위(기본적으로 프로젝트 1개 = 계약 1개)
-- **orders**: 프로젝트 하위의 실제 주문 단위(단건=1, 콜오프/기간계약이면 다건 가능)
 - **order_lines**: 고객에게 납품해야 할 약속 단위(요구 품목/수량/규격)
+  - order_lines는 프로젝트 하에서 정의되는
+  '납품 또는 집행 요구의 최소 단위'이다.
+  - 반드시 주문서(order)를 전제로 하지 않는다.
+  - 수급(sourcing), 정산(receivable), 배송(delivery)의 기준점이 된다.
+  - 계약 문서상 요구사항을 구조화한 내부 엔티티이다.
+
 
 #### 프로젝트 유형(예시)
 - `TENDER` : 공공 입찰(단건 입찰 포함)

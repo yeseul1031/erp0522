@@ -76,7 +76,203 @@
  * 이 주석 블록은 finance schema를 읽는 모든 사람과
  * LLM 기반 편집자가 반드시 따라야 할 선언문이다.
  * ============================================================================
- */
+
+[도메인 정의]
+- 기존 cost/payable/payment 는 "지출(AP)" 도메인이다.
+- 이번 receivable/receipt 는 "수금(AR)" 도메인이다.
+  - receivables : 우리가 받아야 할 돈(채권/정산 단위; 수금 바구니)
+  - receipts     : 실제로 돈이 들어온 행위(입금 이벤트; 분할 수금 가능)
+
+[요구사항 핵심]
+- receivable이 먼저 생성되고, 나중에 어떤 order_line이 포함될지 결정된다.
+- 하나의 order_line은 여러 receivable에 나뉘어 붙지 않는다.
+  - 즉, order_line은 receivable에 최대 1번만 포함(0..1)
+- receivable은 여러 order_line을 포함할 수 있다(1..N)
+
+따라서:
+- order_lines에 FK를 두지 않고(레이어 의존성 최소화),
+- 링크 테이블 receivable_order_line_links 로 연결하며,
+- DB 제약 UNIQUE(rol_ol_sn) 으로 "order_line은 receivable 하나만"을 강제한다.
+
+[레이어 철학 유지]
+(계약/납품: order_lines) <--- 분리 ---> (수급) <--- 분리 ---> (견적/발주) <--- 분리 ---> (배송)
+그리고 수금(AR)은 order_lines를 "묶어서" 관리하지만,
+order_lines 스키마 자체에 수금 FK를 주입하지 않는다(의존성 최소).
+
+[문서 정책]
+- 모든 문서/증빙/첨부는 documents 단일 저장
+- document_links로 receivables / receipts / order_lines 등 필요한 대상에 연결
+- 거래명세서/정산서/입금확인증 등은 documents로 저장 후 link만 건다.
+
+===============================================================================
+[코드/ENUM - 값과 의미]
+
+1) recv_status (Receivable 상태)
+- DRAFT        : 초안(아직 확정 전, 포함 라인/금액 변동 가능)
+- ISSUED       : 발행/확정(정산 단위 확정, 외부 청구/요청에 준하는 상태)
+- PARTIALLY_PAID : 일부 수금(총액 중 일부 receipts 존재)
+- PAID         : 전액 수금 완료(잔액 0)
+- CANCELLED    : 취소(정산 단위 무효)
+- CLOSED       : 종료(회계 마감 등 운영상 종료)
+
+2) recv_type (Receivable 유형)
+- CUSTOMER_INVOICE : 고객 청구/정산(일반)
+- PROGRESS_BILLING : 기성/중도금 등 단계별 청구
+- FINAL_BILLING    : 잔금/최종 청구
+- ADJUSTMENT       : 조정(할인/반품/차감/정산조정)
+- OTHER            : 기타
+
+3) receipt_method (수금 수단)
+- TRANSFER : 계좌입금
+- CARD     : 카드(고객 카드 결제)
+- CASH     : 현금
+- PG       : PG/플랫폼 정산 입금
+- OFFSET   : 상계/대체(상계 처리)
+- OTHER    : 기타
+
+4) receipt_status (수금 이벤트 상태)
+- PENDING   : 대기(입금 예정/확인 전)
+- CONFIRMED : 확인(실입금 확인됨)
+- REVERSED  : 취소/환불/되돌림(수금 이벤트 무효)
+- CANCELLED : 취소
+
+===============================================================================
+[정합성/검증 규칙(중요)]
+A. order_line은 receivable에 최대 1회만 포함
+- receivable_order_line_links.rol_ol_sn 에 UNIQUE 걸어서 DB 강제
+
+B. receivable 총액 계산/불일치 처리
+- receivables.recv_amount_total 은 "정산 확정치(스냅샷)"로 저장 가능
+- 포함된 order_lines의 금액 합계와 다를 수 있음(할인/조정/부분 정산)
+- 차이가 생기면:
+  - recv_adjustment_amount 또는 recv_note로 근거를 남긴다
+  - 문서(정산서/조정근거)는 documents에 저장 후 document_links로 연결
+
+C. receipts 합계로 상태 전이
+- SUM(receipts.amount where status=CONFIRMED) < recv_amount_total  → PARTIALLY_PAID
+- == recv_amount_total → PAID
+- 초과 수금은 원칙적으로 금지(발생 시 ADJUSTMENT 처리/환불 receipt로 상쇄)
+
+===============================================================================
+*/
+
+
+
+-- =============================================================================
+-- TABLE: receivables
+-- DESC : 수금/정산(채권) 헤더. “우리가 받아야 할 돈”의 단위. (지출의 payables와 개념적으로 대칭)
+-- =============================================================================
+CREATE TABLE receivables (
+  recv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수금(정산/채권) PK',
+
+  recv_p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 FK (projects.p_sn). 수금은 프로젝트에 귀속됨(최상위 추적 기준)',
+  recv_customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객/수금 대상 거래처 FK (parties.pt_sn). 없으면 프로젝트 기본 고객을 사용(운영 정책)',
+
+  recv_type ENUM(
+    'CUSTOMER_INVOICE',
+    'PROGRESS_BILLING',
+    'FINAL_BILLING',
+    'ADJUSTMENT',
+    'OTHER'
+  ) NOT NULL DEFAULT 'CUSTOMER_INVOICE' COMMENT '수금/정산 유형. 값 의미는 DDL 상단 주석 참조',
+
+  recv_status ENUM(
+    'DRAFT',
+    'ISSUED',
+    'PARTIALLY_PAID',
+    'PAID',
+    'CANCELLED',
+    'CLOSED'
+  ) NOT NULL DEFAULT 'DRAFT' COMMENT '수금 상태. 값 의미는 DDL 상단 주석 참조',
+
+  recv_issue_dt DATETIME NULL COMMENT '발행/확정 일시(ISSUED로 전환 시점). 청구/정산 확정 기준',
+  recv_due_dt DATETIME NULL COMMENT '입금 기한(운영 기준)',
+
+  recv_currency_code VARCHAR(16) NOT NULL DEFAULT 'KRW' COMMENT '통화 코드(확장 가능). 기본 KRW. 예: USD',
+  recv_amount_total DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT '실제 입금 요청할 총액(정산 확정치/스냅샷). order_lines 합계와 다를 수 있음(조정된 금액)',
+  recv_adjustment_amount DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT '조정액(할인/반품/차감 등). 0 != SUM(order_lines)라면, 사유를 recv_note와 함께 기록',
+
+  recv_note TEXT NULL COMMENT '정산 메모(조정 사유, 정산 범위, 특이사항). 근거 문서는 documents로 저장 후 document_links로 연결',
+
+  recv_create_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
+  recv_update_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+
+  PRIMARY KEY (recv_sn),
+
+  KEY idx_recv_p_sn (recv_p_sn),
+  KEY idx_recv_customer (recv_customer_pt_sn),
+  KEY idx_recv_status (recv_status),
+  KEY idx_recv_due (recv_due_dt),
+
+  CONSTRAINT fk_recv_project
+    FOREIGN KEY (recv_p_sn) REFERENCES projects(p_sn),
+
+  CONSTRAINT fk_recv_customer
+    FOREIGN KEY (recv_customer_pt_sn) REFERENCES parties(pt_sn)
+
+) COMMENT='수금/정산(채권) 헤더. order_lines를 묶는 단위이며, 실제 수금 이벤트는 receipts로 기록.';
+
+
+
+-- =============================================================================
+-- TABLE: receivable_order_line_links
+-- DESC : receivable ↔ order_line 연결(정본). order_line은 receivable 하나에만 포함되도록 UNIQUE로 강제.
+-- =============================================================================
+CREATE TABLE receivable_order_line_links (
+  rol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수금-주문항목 링크 PK',
+
+  rol_recv_sn BIGINT UNSIGNED NOT NULL COMMENT '수금(정산) FK (receivables.recv_sn)',
+  rol_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문항목 FK (order_lines.ol_sn). UNIQUE로 “하나의 order_line은 receivable 하나만” 강제',
+
+  rol_create_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
+  rol_update_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+
+  PRIMARY KEY (rol_sn),
+
+  UNIQUE KEY uq_rol_ol_sn (rol_ol_sn),          -- 핵심 제약: order_line은 receivable 하나만
+  KEY idx_rol_recv_sn (rol_recv_sn),
+
+  CONSTRAINT fk_rol_recv
+    FOREIGN KEY (rol_recv_sn) REFERENCES receivables(recv_sn),
+
+  CONSTRAINT fk_rol_ol
+    FOREIGN KEY (rol_ol_sn) REFERENCES order_lines(ol_sn)
+
+) COMMENT='수금(정산)과 주문항목 연결(정본). order_line은 receivable 하나에만 포함되도록 UNIQUE 강제.';
+
+
+
+-- =============================================================================
+-- TABLE: receipts
+-- DESC : 실제 수금(입금) 이벤트. receivable 1건에 receipts N건(분할 수금) 가능.
+-- =============================================================================
+CREATE TABLE receipts (
+  rcp_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수금 이벤트 PK',
+
+  rcp_recv_sn BIGINT UNSIGNED NOT NULL COMMENT '수금(정산) FK (receivables.recv_sn). 어떤 receivable에 대한 입금인지',
+
+  rcp_status ENUM('PENDING','CONFIRMED','REVERSED','CANCELLED')
+    NOT NULL DEFAULT 'CONFIRMED' COMMENT '수금 이벤트 상태. 값 의미는 DDL 상단 주석 참조',
+
+  rcp_amount DECIMAL(18,6) NOT NULL COMMENT '실제 수금 금액(입금액)',
+  rcp_received_at DATETIME NULL COMMENT '입금 확인 일시(확정 시점). PENDING이면 NULL 가능',
+
+  rcp_reference_no VARCHAR(64) NULL COMMENT '거래 참조번호(이체 거래번호, 카드 승인번호, PG 정산 ID 등)',
+  rcp_note TEXT NULL COMMENT '수금 메모(부분수금/상계/환불/정산 특이사항). 증빙은 documents에 저장 후 document_links로 연결',
+
+  rcp_create_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
+  rcp_update_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+
+  PRIMARY KEY (rcp_sn),
+
+  KEY idx_rcp_recv_sn (rcp_recv_sn),
+  KEY idx_rcp_status (rcp_status),
+  KEY idx_rcp_received_at (rcp_received_at),
+
+  CONSTRAINT fk_rcp_recv
+    FOREIGN KEY (rcp_recv_sn) REFERENCES receivables(recv_sn)
+
+) COMMENT='실제 수금(입금) 이벤트. receivable에 대한 분할 수금 가능. 증빙은 documents+document_links.';
 
 
 
@@ -84,7 +280,7 @@
 -- TABLE: costs
 -- DESC : 비용(원장)
 -- NOTE : costs는 '비용 발생' 원장이다(사유/금액/발생일). 귀속/안분은 cost_allocations로만 관리한다(원장은 단순 유지).
--- NOTE : 비용은 프로젝트(p_sn)/주문(o_sn)/주문라인(ol_sn)/override(olo_sn)/수급케이스(sc_sn) 등에 귀속될 수 있다(대상은 cost_allocations에서만 표현).
+-- NOTE : 비용은 프로젝트(p_sn)/주문라인(ol_sn)/override(olo_sn)/수급케이스(sc_sn) 등에 귀속될 수 있다(대상은 cost_allocations에서만 표현).
 -- NOTE : 비용 증빙(영수증/세금계산서 등)은 documents/doc_links로 '비용 측 증빙'으로 연결한다(다중 첨부 가능).
 
 -- ======================================================================
@@ -225,7 +421,6 @@ CREATE TABLE cost_allocations (
   ca_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 배부 PK',
   ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
   p_sn BIGINT UNSIGNED NULL COMMENT '프로젝트 PK(projects) | 여러 프로젝트 공통 비용이면 NULL 가능(배부 행 여러 개로 분해)',
-  o_sn BIGINT UNSIGNED NULL COMMENT '주문서 PK(orders) | 주문서 단위 비용(출장/접대 등)',
   ol_sn BIGINT UNSIGNED NULL COMMENT '주문라인 PK(order_lines) | 특정 납품 항목을 위한 비용(검사/가공 등)',
   olo_sn BIGINT UNSIGNED NULL COMMENT '주문라인 override PK(order_line_overrides) | 희소 케이스 구성품/분할 단위 비용',
   sc_sn BIGINT UNSIGNED NULL COMMENT '수급케이스 PK(sourcing_cases) | 특정 수급(국내/해외/제작) 건에 귀속되는 비용',
@@ -236,7 +431,6 @@ CREATE TABLE cost_allocations (
   PRIMARY KEY (ca_sn),
   KEY idx_cost_allocations_ct (ct_sn),
   KEY idx_cost_allocations_p (p_sn),
-  KEY idx_cost_allocations_o (o_sn),
   KEY idx_cost_allocations_ol (ol_sn),
   KEY idx_cost_allocations_olo (olo_sn),
   KEY idx_cost_allocations_sc (sc_sn),
@@ -244,8 +438,6 @@ CREATE TABLE cost_allocations (
     FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn),
   CONSTRAINT fk_cost_allocations_projects
     FOREIGN KEY (p_sn) REFERENCES projects(p_sn),
-  CONSTRAINT fk_cost_allocations_orders
-    FOREIGN KEY (o_sn) REFERENCES orders(o_sn),
   CONSTRAINT fk_cost_allocations_order_lines
     FOREIGN KEY (ol_sn) REFERENCES order_lines(ol_sn),
   CONSTRAINT fk_cost_allocations_order_line_overrides
