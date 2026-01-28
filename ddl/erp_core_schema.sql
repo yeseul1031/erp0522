@@ -111,23 +111,43 @@ ALTER TABLE departments
 -- ======================================================================
 -- TABLE: parties
 -- DESC : 업체/기관(고객사/공급사/물류/중개 등)
+-- NOTE: 거래은행 정보는 별도 테이블로 관리한다(bank_accounts).
+-- 수령지 주소: 물건을 우리가 직접 받으러 갈때, 본사 주소와 별개로 창고 주소가 필요함
+-- pt_type은 해외시, 중계사들만 조회하거나, 무언가 필터링해서 보고싶을때 쓰기 위한 용도
 -- ======================================================================
 CREATE TABLE parties (
   pt_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '업체/기관 PK',
   pt_type ENUM('CUSTOMER','VENDOR','FORWARDER','BROKER','OTHER')
-    NOT NULL COMMENT '업체 유형(ENUM) | CUSTOMER:고객사, VENDOR:공급사/판매사, FORWARDER:포워더/물류, BROKER:관세사/중개, OTHER:기타',
+    NOT NULL COMMENT '업체 유형(ENUM) | CUSTOMER:고객사, VENDOR:공급사/판매사, FORWARDER:포워더/물류, BROKER:관세사/중계, OTHER:기타(단순 퀵/배송기사 처럼 영수증 처리용으로만 등록하는 업체들)',
   pt_name VARCHAR(128) NOT NULL COMMENT '업체명',
+  pt_name_alias JSON NOT NULL DEFAULT '[]' COMMENT '검색을 위한 2차 이름. 여러개 넣을수 있게, json_array로. 예> Korea -> [''코리아'']' CHECK (json_valid(`pt_name_alias`)),
   pt_country_code CHAR(2) NULL COMMENT '국가코드(ISO 2자리, 예: KR, US)',
   pt_biz_no VARCHAR(16) NULL COMMENT '사업자번호/등록번호',
+  pt_biz_owner VARCHAR(32) NULL COMMENT '대표자명',
+  pt_biz_type VARCHAR(64) NULL COMMENT '업태',
+  pt_biz_ctg VARCHAR(64) NULL COMMENT '종목',
+  pt_phone VARCHAR(20) NULL COMMENT '대표전화',
   pt_contact_name VARCHAR(32) NULL COMMENT '담당자명',
   pt_contact_phone VARCHAR(16) NULL COMMENT '연락처',
+  pt_mobile VARCHAR(16) NULL COMMENT '휴대전화',
+  pt_fax VARCHAR(16) NULL COMMENT '팩스전화',
+  pt_zipcode VARCHAR(7) NULL COMMENT '우편번호',
+  pt_addr_1 VARCHAR(64) NULL COMMENT '우편주소',
+  pt_addr_2 VARCHAR(64) NULL COMMENT '상세주소',
+  pt_url VARCHAR(64) NULL COMMENT '홈페이지',
   pt_contact_email VARCHAR(128) NULL COMMENT '이메일',
+  pt_note_1 VARCHAR(512) NULL COMMENT '비고1',
+  pt_note_2 VARCHAR(128) NULL COMMENT '비고2',
+  pt_note_3 VARCHAR(128) NULL COMMENT '비고3',
+  pt_disabled ENUM('Y','N') NULL COMMENT '거래중지',
   pt_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pt_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+  pt_shipping_zipcode VARCHAR(7) NULL COMMENT '수령지 우편번호',
+  pt_shipping_addr_1 VARCHAR(64) NULL COMMENT '수령지 주소1',
+  pt_shipping_addr_2 VARCHAR(64) NULL COMMENT '수령지 주소 상세',
   PRIMARY KEY (pt_sn),
   KEY idx_parties_pt_name (pt_name)
 ) COMMENT='업체/기관(고객사/공급사/물류/중개 등)';
-
 
 -- ======================================================================
 -- TABLE: goods
@@ -135,11 +155,22 @@ CREATE TABLE parties (
 -- ======================================================================
 CREATE TABLE goods (
   g_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '기성상품 PK',
-  g_manufacturer_name VARCHAR(64) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
+  g_manufacturer_name VARCHAR(128) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
   g_name VARCHAR(128) NOT NULL COMMENT '상품명(카탈로그명)',
   g_model_no VARCHAR(32) NULL COMMENT '모델번호',
-  g_spec_json JSON NULL COMMENT '규격/옵션(JSON)',
-  g_note VARCHAR(500) NULL COMMENT '비고',
+  g_unit VARCHAR(16) NULL COMMENT '물품 단위(예: EA, 개, 톤 등)',
+  g_average_price INT NOT NULL DEFAULT 0 COMMENT '평단가 (부가세 제외 금액, 해외는 포함된 금액)',
+  g_stock INT NOT NULL DEFAULT 0 COMMENT '재고(개수)',
+  g_tags JSON NULL COMMENT '태그들 (JSON 배열 권장)' CHECK (json_valid(`g_tags`)),
+  g_spec_json JSON NULL COMMENT '규격/옵션(JSON). 기존 text g_spec은 마이그레이션 시 JSON으로 포장하여 저장',
+  g_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',
+  g_applicable_spec VARCHAR(128) NULL COMMENT '적용 규격/참조',
+  g_note VARCHAR(500) NULL COMMENT '비고 (기존 g_etc 포함 가능)',
+  g_stock_location VARCHAR(128) NULL COMMENT '재고위치',
+  g_disabled ENUM('Y','N') NOT NULL DEFAULT 'N' COMMENT '비활성화 여부',
+  g_thumbnail_path VARCHAR(255) NULL COMMENT '썸네일/파일 경로(버킷 이후 경로)',
+  g_major_pt_sn BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '주거래처(pt_sn)',
+  g_category VARCHAR(64) NOT NULL DEFAULT '' COMMENT '카테고리',
   g_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   g_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (g_sn),
@@ -160,9 +191,7 @@ CREATE TABLE activity_logs (
   al_target_table VARCHAR(100) NOT NULL COMMENT '대상 테이블명',
   al_target_pk BIGINT UNSIGNED NOT NULL COMMENT '대상 PK 값',
   al_p_sn BIGINT UNSIGNED NULL COMMENT '관련 프로젝트 PK(검색 편의)',
-  al_occurred_at DATETIME NOT NULL COMMENT '발생일시(업무 이벤트)',
-  al_note VARCHAR(500) NULL COMMENT '요약/노트/메모 등',
-  al_data_json JSON NULL COMMENT '부가 정보(JSON)',
+  al_data_json JSON NULL COMMENT 'al_action_code에 따른 데이터 JSON',
   al_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   PRIMARY KEY (al_sn),
   KEY idx_activity_logs_actor (al_actor_a_sn),
@@ -188,7 +217,6 @@ CREATE TABLE audit_changes (
   ac_al_sn BIGINT UNSIGNED NOT NULL COMMENT '행위 로그 PK(activity_logs)',
   ac_target_table VARCHAR(100) NOT NULL COMMENT '대상 테이블명',
   ac_target_pk BIGINT UNSIGNED NOT NULL COMMENT '대상 PK 값',
-  ac_changed_fields_json JSON NOT NULL COMMENT '변경된 필드 diff(JSON: from/to)',
   ac_before_json JSON NULL COMMENT '변경 전 스냅샷(JSON, 필요 시)',
   ac_after_json JSON NULL COMMENT '변경 후 스냅샷(JSON, 필요 시)',
   ac_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -240,14 +268,14 @@ Balhea ERP - Documents Hub (documents + document_links) Extension v7.8.2
 */
 
 /* 문서 허브: 모든 파일/서류는 여기로 수집 */
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE documents (
   doc_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'PK',
   doc_category VARCHAR(30) NOT NULL COMMENT '문서 카테고리(권장; 확장 가능): COST, PAYMENT, INVOICE, PURCHASE, DELIVERY, CUSTOMS, QUALITY, CONTRACT, TAX, SETTLEMENT, REFUND, OTHER',
   doc_type VARCHAR(40) NOT NULL COMMENT '문서 타입(권장 예시; 확장 가능): CASH_RECEIPT, SELLER_RECEIPT, CARD_APPROVAL, CARD_SLIP, BANK_TRANSFER_RECEIPT, BANK_TRANSFER_PROOF, TAX_INVOICE, STATEMENT, PURCHASE_DETAILS, BL, AWB, PACKING_LIST, CUSTOMS_DOC, DELIVERY_NOTE, DELIVERY_PROOF, SHIPMENT_PROOF, INSPECTION_REPORT, PHOTO, PLATFORM_SETTLEMENT, REFUND_PROOF, OTHER',
   doc_issuer_name VARCHAR(120) NULL COMMENT '발행처/제공처(거래처/포워더/관세사/창고/검사기관 등)',
   doc_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT 'parties.pt_sn (가능하면)',
-  doc_no VARCHAR(80) NULL COMMENT '문서번호(있으면)',
-  doc_date DATE NULL COMMENT '문서일자(있으면)',
+--  doc_no VARCHAR(80) NULL COMMENT '문서번호(있으면)',
+--  doc_date DATE NULL COMMENT '문서일자(있으면)',
 --  doc_ccy CHAR(3) NULL COMMENT '문서 금액 통화(있으면)',
 --  doc_amount DECIMAL(18,2) NULL COMMENT '문서 금액(있으면)',
 --  doc_tax_amount DECIMAL(18,2) NULL COMMENT '세액(있으면)',
@@ -258,9 +286,9 @@ CREATE TABLE IF NOT EXISTS documents (
   doc_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
   doc_created_by_a_sn BIGINT UNSIGNED NULL COMMENT 'actors.a_sn (업로더/등록자)',
   KEY idx_doc_category_type (doc_category, doc_type),
-  KEY idx_doc_issuer_pt_sn (doc_issuer_pt_sn),
-  KEY idx_doc_docno (doc_no),
-  KEY idx_doc_date (doc_date)
+  KEY idx_doc_issuer_pt_sn (doc_issuer_pt_sn)
+--  KEY idx_doc_docno (doc_no),
+--  KEY idx_doc_date (doc_date)
 ) COMMENT='문서 허브: 모든 증빙/서류/파일을 단일 테이블로 저장. 업무/재무/물류 엔티티와의 연결은 document_links로만 표현(엔티티별 문서 테이블 금지).';
 
 /* 문서 연결: 문서가 어떤 엔티티의 근거/증빙인지 연결(다대다) */
