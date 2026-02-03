@@ -71,14 +71,14 @@
 프로젝트(계약) 담당자 영역  |  projects 1 (프로젝트)
                       |     |
                       |     +---> N order_lines (주문항목, 뭘 납품할지 정의)
-                      |                 |
-                      |                 +---> N order_line_overrides (예외 케이스)
-                      |                 |             |
-                      |                 +---> 1 sourcing_cases (수급 담당자 지정, 물리적으로는 여러개지만 논리적으로는 1:1 매핑임. sourcing_cases.dc_is_active = true)
-                      |                               |
-수급 담당자 영역          |   (수급 담당자가 수락할때 생성)      +---> 1 subtype_cases (국내/해외/자체제작 등)
-                      |                               |
-                      |                               +-------> N sourcing_case_lines (조달 대상 정의, g_sn 또는 자유텍스트)
+                      |              |    |
+                      |              |    +---> N order_line_overrides (예외 케이스)
+                      |              |              |
+                      |              +---> (논리적 1) sourcing_cases (수급 담당자 지정, 물리적으로는 여러개지만 논리적으로는 1:1 매핑임. sourcing_cases.dc_is_active = true)
+                      |                             |    |
+수급 담당자 영역          |   (수급 담당자가 수락할때 생성)    |    +---> 1 subtype_cases (국내/해외/자체제작 등)
+                      |                             |
+                      |                              +-------> N sourcing_case_lines (조달 대상 정의, g_sn 또는 자유텍스트)
                       |                                                  /
 (견적/발주 진행 과정)      |     +-------------------------------------------/
                       |      |
@@ -232,6 +232,7 @@ CREATE TABLE order_line_overrides (
  * - 주문항목(order_lines) 단위의 '수급 실행 케이스'이다.
  * - 케이스는 수급 방식(DOMESTIC/OVERSEAS/IN_HOUSE)별로 생성될 수 있으며, 기본은 1 order_line : 1+ sourcing_cases.
  * - sc_status는 '단계 진행'이 아니라, '책임/수락/거절에 따른 지속 상태'를 표현한다.
+ *   단, 서비스적인 측면에서 업무를 완료했다, 즉 더이상 다른 업무를 하지 않는다는 의미로 DONE 상태를 둔다. 이건 견적/발주와의 데이터적 무결성 완료를 보장하지는 않는다. 그러니 DONE은 서비스적으로 사람이 수동으로 선택한다.
  *
  * STATUS MODEL (minimal)
  * - OPEN             : 담당자 미확정(대기열)
@@ -265,13 +266,14 @@ CREATE TABLE sourcing_cases (
   sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
     NOT NULL COMMENT '수급 방식(ENUM) | DOMESTIC:국내구매, OVERSEAS:해외구매, IN_HOUSE:자체제작',
   sc_assignee_a_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 수행 담당자 PK(assignees) | 협업 담당자 또는 프로젝트 담당자',
-  sc_status VARCHAR(32) NOT NULL COMMENT
+  sc_status ENUM('OPEN', 'SELF_ASSIGNED', 'ASSIGNING', 'ASSIGNEE_WORKING', 'CANCELLED', 'DONE') NOT NULL COMMENT
     '수급 케이스의 현재 처리 상태를 나타내는 코드이다.
     - OPEN               : 담당자 미확정 상태이다. 누구도 인수하지 않았으며, 담당자 지정 대기열에 해당한다.
     - SELF_ASSIGNED      : 케이스 생성자/프로젝트 담당자가 본인이 직접 처리하기로 인수한 상태이다.
     - ASSIGNING          : 특정 담당자에게 처리를 요청한 상태이다. 요청 대상의 수락/거절을 기다린다.
     - ASSIGNEE_WORKING   : 요청 받은 담당자가 수락하여 실제로 처리 중인 상태이다.
-    - CANCELLED          : 케이스가 취소된 상태이다.',
+    - CANCELLED          : 케이스가 취소된 상태이다.
+    - DONE               : 케이스 처리 완료 상태이다.',
   sc_owner_a_sn BIGINT UNSIGNED NULL COMMENT
     '현재 이 수급 케이스를 실제로 처리할 책임(소유권)을 가진 담당자를 식별하는 외래키이다. OPEN 상태에서는 NULL일 수 있다.',
 
@@ -651,27 +653,35 @@ CREATE TABLE rfq_lines (
 -- NOTE : allocated_qty(및 합계)는 sc_required_qty(목표/참조)와 불일치할 수 있음(정상). 해석 기준은 sourcing_cases(Execution & Quantity Interpretation).
 -- ======================================================================
 CREATE TABLE rfq_allocations (
-  rfqa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 배분 PK - 국내/해외 공용',
+  rfqa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 배분 PK (실행 라인 기준)',
+
+  rfq_sn  BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs) - 조회 편의 캐시',
   rfql_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ 라인 PK(rfq_lines)',
-  sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
-  olo_sn BIGINT UNSIGNED NULL COMMENT 'BUNDLE/예외 구성품 식별자(선택, order_line_overrides.olo_sn)',
-  rfqa_qty DECIMAL(14,3) NOT NULL COMMENT '케이스 귀속 수량(내부 관리용)',
+  sc_sn   BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases) - 조회 편의 캐시',
+  scl_sn  BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 라인 PK(sourcing_case_lines) - 실행 단위(정본)',
+
+  rfqa_qty DECIMAL(14,3) NOT NULL COMMENT '실행 라인(scl) 기준 요청 수량(배분)',
   rfqa_note VARCHAR(500) NULL COMMENT '비고(배분 사유 등)',
+
   rfqa_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   rfqa_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (rfqa_sn),
-  UNIQUE KEY uk_rfq_alloc (rfql_sn, sc_sn),
-  KEY idx_rfq_alloc_rfql (rfql_sn),
-  KEY idx_rfq_alloc_sc (sc_sn),
-  KEY idx_rfq_alloc_olo (olo_sn),
 
+  -- 같은 RFQ 라인에 같은 실행 라인을 중복 배분하는 실수 방지
+  UNIQUE KEY uk_rfq_alloc (rfql_sn, scl_sn),
+
+  KEY idx_rfq_alloc_rfq  (rfq_sn),
+  KEY idx_rfq_alloc_rfql (rfql_sn),
+  KEY idx_rfq_alloc_sc   (sc_sn),
+  KEY idx_rfq_alloc_scl  (scl_sn),
+
+  CONSTRAINT fk_rfq_alloc_rfq  FOREIGN KEY (rfq_sn)  REFERENCES rfqs(rfq_sn),
   CONSTRAINT fk_rfq_alloc_rfql FOREIGN KEY (rfql_sn) REFERENCES rfq_lines(rfql_sn),
-  CONSTRAINT fk_rfq_alloc_sc FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn),
-  CONSTRAINT fk_rfq_alloc_olo FOREIGN KEY (olo_sn) REFERENCES order_line_overrides(olo_sn)
-    ON DELETE SET NULL
-    ON UPDATE RESTRICT
-) COMMENT='RFQ 라인 배분(여러 sc 혼합 RFQ 지원) - 국내/해외 통합';
+  CONSTRAINT fk_rfq_alloc_sc   FOREIGN KEY (sc_sn)   REFERENCES sourcing_cases(sc_sn),
+  CONSTRAINT fk_rfq_alloc_scl  FOREIGN KEY (scl_sn)  REFERENCES sourcing_case_lines(scl_sn)
+) COMMENT='RFQ 라인 ↔ 수급 실행 라인 배분(sc/rfq 캐시 포함, 실행 기준은 scl)';
+
 
 
 -- ======================================================================
@@ -792,23 +802,32 @@ CREATE TABLE po_lines (
 -- NOTE : allocated_qty(및 합계)는 sc_required_qty(목표/참조)와 불일치할 수 있음(정상). 해석 기준은 sourcing_cases(Execution & Quantity Interpretation).
 -- ======================================================================
 CREATE TABLE po_allocations (
-  poa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '발주 라인 배분 PK - 국내/해외 공용',
-  pol_sn BIGINT UNSIGNED NOT NULL COMMENT '발주 라인 PK(po_lines)',
-  sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases)',
-  olo_sn BIGINT UNSIGNED NULL COMMENT 'BUNDLE/예외 구성품 식별자(선택, order_line_overrides.olo_sn)',
-  poa_qty DECIMAL(14,3) NOT NULL COMMENT '케이스 귀속 수량(내부 관리용)',
+  poa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PO 라인 배분 PK (실행 라인 기준)',
+
+  po_sn  BIGINT UNSIGNED NOT NULL COMMENT 'PO PK(purchase_orders) - 조회 편의 캐시',
+  pol_sn BIGINT UNSIGNED NOT NULL COMMENT 'PO 라인 PK(po_lines)',
+  sc_sn  BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases) - 조회 편의 캐시',
+  scl_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 라인 PK(sourcing_case_lines) - 실행 단위(정본)',
+
+  poa_qty DECIMAL(14,3) NOT NULL COMMENT '실행 라인(scl) 기준 발주 수량(배분)',
   poa_note VARCHAR(500) NULL COMMENT '비고(배분 사유 등)',
+
   poa_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   poa_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (poa_sn),
-  UNIQUE KEY uk_po_alloc (pol_sn, sc_sn),
+
+  -- 같은 PO 라인에 같은 실행 라인을 중복 배분하는 실수 방지
+  UNIQUE KEY uk_po_alloc (pol_sn, scl_sn),
+
+  KEY idx_po_alloc_po  (po_sn),
   KEY idx_po_alloc_pol (pol_sn),
-  KEY idx_po_alloc_sc (sc_sn),
-  KEY idx_po_alloc_olo (olo_sn),
+  KEY idx_po_alloc_sc  (sc_sn),
+  KEY idx_po_alloc_scl (scl_sn),
+
+  CONSTRAINT fk_po_alloc_po  FOREIGN KEY (po_sn)  REFERENCES purchase_orders(po_sn),
   CONSTRAINT fk_po_alloc_pol FOREIGN KEY (pol_sn) REFERENCES po_lines(pol_sn),
-  CONSTRAINT fk_po_alloc_sc FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn),
-  CONSTRAINT fk_po_alloc_olo FOREIGN KEY (olo_sn) REFERENCES order_line_overrides(olo_sn)
-    ON DELETE SET NULL
-    ON UPDATE RESTRICT
-) COMMENT='발주 라인 배분(여러 sc 혼합 PO 지원) - 국내/해외 통합';
+  CONSTRAINT fk_po_alloc_sc  FOREIGN KEY (sc_sn)  REFERENCES sourcing_cases(sc_sn),
+  CONSTRAINT fk_po_alloc_scl FOREIGN KEY (scl_sn) REFERENCES sourcing_case_lines(scl_sn)
+) COMMENT='PO 라인 ↔ 수급 실행 라인 배분(sc/po 캐시 포함, 실행 기준은 scl)';
+
