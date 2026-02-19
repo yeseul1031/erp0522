@@ -281,7 +281,11 @@ CREATE TABLE receipts (
 -- DESC : 비용(원장)
 -- NOTE : costs는 '비용 발생' 원장이다(사유/금액/발생일). 귀속/안분은 cost_allocations로만 관리한다(원장은 단순 유지).
 -- NOTE : 비용은 프로젝트(p_sn)/주문라인(ol_sn)/override(olo_sn)/수급케이스(sc_sn) 등에 귀속될 수 있다(대상은 cost_allocations에서만 표현).
--- NOTE : 비용 증빙(영수증/세금계산서 등)은 documents/doc_links로 '비용 측 증빙'으로 연결한다(다중 첨부 가능).
+-- NOTE : 비용 증빙(거래명세서/정산근거/통관서류 등)은 documents+document_links로 costs에 연결한다(다중 첨부 가능).
+-- NOTE : 전자세금계산서(XML/PDF) 원본은 tax_invoices에 documents+document_links로 연결하고,
+--        tax_invoices ↔ payments 대사는 tax_invoice_payment_allocations로 관리한다.
+--        (즉, 세금계산서는 costs의 직접 정본이 아니다)
+
 
 -- ======================================================================
 CREATE TABLE costs (
@@ -353,10 +357,12 @@ CREATE TABLE bank_accounts (
 -- ======================================================================
 -- TABLE: payments
 -- DESC : 지급/결제(카드/이체/현금) 원장
--- NOTE : payments는 실제 지급 사건(카드/이체/현금)을 기록한다.
--- NOTE : 지급이 어떤 비용(들)을 얼마만큼 정산했는지는 payment_lines로만 연결한다(중복 저장 금지).
--- NOTE : 지급 증빙(이체확인/카드승인/정산내역 등)은 documents/doc_links로 '지급 측 증빙'으로 연결한다(다중 첨부 가능).
-
+-- NOTE : payments는 실제 지출(지급) 원장이다.
+-- NOTE : payments는 실지급 원장이다.
+-- NOTE : 지급 분할/지급 단계(계약금/중도금/잔금)는 payables를 분할하여 표현한다.
+-- NOTE : payment_lines는 본 운영 정책에서는 사용하지 않는다(지급 분할은 payables 분할로만 수행).
+-- NOTE : 지급이 어떤 비용(costs)을 커버했는지의 근거/유도는 다음 경로로 해석한다:
+--        payment(1:1) payable(pbl_inv_sn) → invoice_cost_allocations → costs
 -- ======================================================================
 CREATE TABLE payments (
   pay_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급/결제 PK',
@@ -385,30 +391,6 @@ CREATE TABLE payments (
     FOREIGN KEY (pay_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='지급/결제(카드/이체/현금) 원장';
 
-
--- ======================================================================
--- TABLE: payment_lines
--- DESC : 지급과 비용의 매핑(다대다, 부분지급/일괄지급 지원)
--- NOTE : payment_lines는 payments(지급) ↔ costs(비용)를 금액으로 매핑한다(부분/분할 정산 포함).
--- NOTE : 선금/중도금/잔금 같은 '지급 단계'는 payment_lines.note(또는 UI 라벨)로만 표현한다(비용/PO-비용 링크에 중복 저장하지 않는다).
--- ======================================================================
-CREATE TABLE payment_lines (
-  pyl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급-비용 연결 PK',
-  pyl_pay_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 PK(payments)',
-  pyl_ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
-  pyl_amount DECIMAL(18,2) NOT NULL COMMENT '이번 지급으로 해당 비용에 정산된 금액(부분/분할지급 지원)',
-  pyl_note VARCHAR(500) NULL COMMENT '비고',
-  pyl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  pyl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-  PRIMARY KEY (pyl_sn),
-  UNIQUE KEY uk_payment_lines (pyl_pay_sn, pyl_ct_sn),
-  KEY idx_payment_lines_pay (pyl_pay_sn),
-  KEY idx_payment_lines_ct (pyl_ct_sn),
-  CONSTRAINT fk_payment_lines_pay
-    FOREIGN KEY (pyl_pay_sn) REFERENCES payments(pay_sn),
-  CONSTRAINT fk_payment_lines_ct
-    FOREIGN KEY (pyl_ct_sn) REFERENCES costs(ct_sn)
-) COMMENT='지급과 비용의 매핑(다대다, 부분지급/일괄지급 지원)';
 
 
 -- ======================================================================
@@ -614,73 +596,149 @@ CREATE TABLE po_cost_links (
 
 -- ======================================================================
 -- TABLE: invoices
--- DESC : 인보이스/거래명세/세금계산서 등 외부 문서(지급 단위 아님)
--- NOTE : invoices는 외부 문서 컨테이너다(영수증/세금계산서/거래명세서 등). invoice 자체는 '지급 단위'가 아니다.
--- NOTE : invoice_type(유형) 코드는 주석(권장값)을 따른다. 지급/결재 상태는 payables에서 관리한다.
+-- SCOPE: 공공조달 도메인(조달 한정 통합 재무) - "지급요청" 원장
+--
+-- 핵심 정의(오해 방지)
+-- 1) invoices 는 "외부 문서 컨테이너"가 아니다.
+--    invoices 는 거래처로부터 들어오는 '지급요청(청구/정산 요청) 이벤트'를 구조화해서 저장하는 원장이다.
+--    즉, invoices 는 "우리가 언제/얼마를/어느 거래처로부터 지급 요청 받았는지"를 기록한다.
+--
+-- 2) invoices 는 '지급 단위'가 아니다. (실제 지급은 payments, 지급 실행 요청/승인은 payables)
+--    - invoice 1건이 payables 여러 건으로 분할될 수 있다. (예: 계약금/중도금/잔금, 월별 분할 지급 등)
+--    - 반대로 여러 invoice를 묶어서 1건 payable로 처리할 수도 있다(업무 정책에 따라).
+--    - 따라서 invoices 는 "지급요청 근거/청구 단위"이고, 집행 단위는 payables/payments가 정본이다.
+--
+-- 3) documents(파일)와의 관계
+--    - 거래명세서 PDF, 청구서 PDF 등 "종이/파일" 원본은 documents 에 저장하고 document_links로 invoices에 연결한다.
+--    - invoices 는 파일 저장소가 아니라, '문서번호/발행일/요청금액/통화/기한' 같은 핵심 메타를 구조화로 남긴다.
+--
+-- 4) 세금계산서/영수증 처리(중요)
+--    - 전자세금계산서(세무 포스팅 원장)는 invoices에 넣지 않는다.
+--      → tax_invoices / tax_invoice_payment_allocations 로 분리하여 payments 대사 중심으로 관리한다.
+--    - 카드/계좌이체 영수증(결제증빙)은 payments에 연결된 documents로 관리한다.
+--    - invoices는 지급요청 전용이므로, TAX_INVOICE/RECEIPT 같은 값은 invoices에 두지 않는다.
+--
+-- 5) 비용(costs)과의 관계
+--    - costs 는 비용원천(비용 발생/확정) 원장이다.
+--    - invoices 는 비용(costs)을 근거로 "이번에 얼마를 지급해달라"는 거래처의 요청 단위다.
+--    - 따라서 "cost 1 → invoice N"은 자연스러운 구조(여러번 청구/월별 정산/부분 청구 등).
+--
+-- 6) payables와의 관계
+--    - invoices(지급요청) → payables(내부 지급 실행 요청/승인)으로 넘어가는 과정은 서비스 레벨에서 결정한다.
+--    - payable은 "지급 권한자에게 요청한 집행 단위"이고, invoice는 "거래처가 요청한 청구 단위"다.
+--
+-- 권장 사용 패턴(요약)
+-- - 계좌이체 B2B: cost(확정) → invoice(지급요청 수신) → payables(승인/분할) → payments(이체 실행)
+-- - 즉시 카드결제(B2C/온라인몰): invoice 없이도 운영 가능. (cost + payments + documents로 충분)
 -- ======================================================================
 CREATE TABLE invoices (
-  inv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '인보이스 PK(외부 문서 컨테이너)',
+  inv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청(Invoice) PK - 거래처로부터의 청구/지급요청 원장',
 
-  inv_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT '발행 주체 PK(parties) | 없거나 비정형이면 NULL',
-  inv_issuer_name VARCHAR(200) NULL COMMENT '발행처 표시명(Party 미연결 시)',
+  -- 지급요청 발행 주체(거래처)
+  inv_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT '지급요청 발행 거래처 PK(parties) | 거래처 매핑 불가/미정이면 NULL',
+  inv_issuer_name VARCHAR(200) NULL COMMENT '발행처 표시명(Party 미연결 시, 비정형 원문 표시용)',
 
-  inv_invoice_type ENUM('STATEMENT','TAX_INVOICE','INVOICE','RECEIPT','OTHER') COMMENT '인보이스 유형(ENUM) | STATEMENT:거래명세, TAX_INVOICE:세금계산서, INVOICE:청구서, RECEIPT:영수증, OTHER:기타'
+  -- 지급요청 유형(지급요청 전용)
+  -- - STATEMENT: 거래명세/정산내역(이번에 얼마를 지급해달라는 근거 문서 성격)
+  -- - INVOICE: 청구서/지급요청서(명시적 청구)
+  -- - OTHER: 예외적 문서(지급요청이지만 분류 곤란)
+  -- 주의: TAX_INVOICE/RECEIPT는 invoices에 넣지 않는다.
+  inv_invoice_type ENUM('STATEMENT','INVOICE','OTHER')
     NOT NULL DEFAULT 'INVOICE'
-    COMMENT '문서 유형(ENUM) | STATEMENT:거래명세, TAX_INVOICE:세금계산서, INVOICE:청구서, RECEIPT:영수증, OTHER:기타',
+    COMMENT '지급요청 유형(지급요청 전용) | STATEMENT:거래명세/정산근거, INVOICE:청구서/지급요청, OTHER:기타(지급요청이지만 분류 곤란)',
 
-  inv_doc_no VARCHAR(120) NULL COMMENT '문서번호(거래명세서 번호/세금계산서 번호 등)',
-  inv_issued_at DATETIME NULL COMMENT '문서 발행일시(업무 이벤트)',
-  inv_due_at DATE NULL COMMENT '문서상 지급기한(있으면)',
+  -- 지급요청 문서 식별/일자
+  inv_doc_no VARCHAR(120) NULL COMMENT '거래처 문서번호(청구서/거래명세서 번호 등) | 중복 가능(거래처마다 체계 다름)',
+  inv_issued_at DATETIME NULL COMMENT '거래처가 문서를 발행/전송한 시각(업무 이벤트)',
+  inv_due_at DATE NULL COMMENT '문서상 지급기한(있으면). 지급 지연/우선순위 판단에 사용',
 
-  inv_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '문서 통화',
-  inv_subtotal_amount DECIMAL(18,2) NULL COMMENT '공급가액/소계(있으면)',
-  inv_tax_amount DECIMAL(18,2) NULL COMMENT '세액(있으면)',
-  inv_total_amount DECIMAL(18,2) NOT NULL COMMENT '총액',
+  -- 금액/통화(지급요청 금액)
+  inv_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급요청 통화(ISO 4217)',
+  inv_subtotal_amount DECIMAL(18,2) NULL COMMENT '소계/공급가액(거래처 문서에 있으면 저장; 없으면 NULL)',
+  inv_tax_amount DECIMAL(18,2) NULL COMMENT '세액(거래처 문서에 있으면 저장; 없으면 NULL). ※ 세금계산서 원장은 tax_invoices에서 관리',
+  inv_total_amount DECIMAL(18,2) NOT NULL COMMENT '지급요청 총액(문서 기준) - payables 분할의 상한/근거로 사용',
 
-  inv_note VARCHAR(500) NULL COMMENT '메모',
+  inv_note VARCHAR(500) NULL COMMENT '메모(지급요청 특이사항/분할지급 약속/오프라인 합의/문서 요약 등)',
 
-  inv_created_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
+  -- 감사/작성자
+  inv_created_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees) | 누가 이 지급요청을 시스템에 등록했는지',
   inv_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   inv_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (inv_sn),
+
   KEY idx_invoices_issuer (inv_issuer_pt_sn),
   KEY idx_invoices_issued_at (inv_issued_at),
+  KEY idx_invoices_due_at (inv_due_at),
   KEY idx_invoices_doc_no (inv_doc_no),
+  KEY idx_invoices_type (inv_invoice_type),
 
   CONSTRAINT fk_invoices_issuer
     FOREIGN KEY (inv_issuer_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_invoices_creator
-    FOREIGN KEY (inv_created_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='인보이스/거래명세/세금계산서 등 외부 문서(지급 단위 아님)';
+    FOREIGN KEY (inv_created_by_a_sn) REFERENCES assignees(a_sn)
+
+) COMMENT='지급요청(청구/정산요청) 원장 - TAX_INVOICE/영수증은 포함하지 않음(별도 tax_invoices, payment documents로 관리)';
+
 
 
 -- ======================================================================
 -- TABLE: invoice_lines
--- DESC : 인보이스 라인(GOODS/CHARGE). invoice는 지급단위가 아니므로 지급 연결은 payables에서 수행
--- NOTE : invoice_lines는 invoices의 문서 라인이다(재화/비용 항목 등).
--- NOTE : line_type 권장: GOODS/CHARGE. charge_category는 권장 표준값을 주석에 두고 확장 가능(VARCHAR+COMMENT)으로 운용한다.
+-- SCOPE: 선택(OPTIONAL) - 지급요청(invoices)의 "내부 분해 정보" 저장, 나중에 OCR/파싱으로 채울 수도 있고, 수동 입력으로도 채울 수 있다. (지급요청 라인 아이템/부대비용 등)
+--
+-- 핵심 정의(오해 방지)
+-- 1) invoice_lines 는 "필수 입력"이 아니다.
+--    - 현업에서 PDF만 있고 자동 스캔(OCR/파싱)이 없는 경우가 대부분이므로,
+--      기본 운영은 invoices 헤더만으로도 가능해야 한다.
+--    - lines는 “가능하면/필요하면” 채우는 선택 정보다.
+--
+-- 2) invoice_lines 는 "증빙 파일 목록"을 담기 위한 용도가 아니다.
+--    - 파일은 documents에 저장하고 invoices에 document_links로 연결한다.
+--    - invoice_lines는 지급요청 금액의 내역(재화/부대비용/조정)을 구조화로 남기고 싶을 때 사용한다.
+--
+-- 3) tax_invoices와의 분리
+--    - 세금계산서의 라인(품목/세액)은 tax_invoices 영역에서 필요하면 별도 테이블로 확장한다.
+--    - invoices/invoice_lines는 지급요청(청구) 용도에 집중한다.
+--
+-- 사용 권장 예시
+-- - 거래처가 "거래명세서"를 품목별로 제공하고, 금액 분해/검증이 필요한 경우
+-- - 조달 비용(costs)와 일부 라인을 매칭하고 싶은 경우(예: 배송비/통관비가 별도 항목으로 명시)
+--
+-- 주의
+-- - pol별 cost_lines 같은 정교한 원가 라인 정합성을 invoice_lines로 강제하지 않는다.
+--   비용 정본은 costs이고, 지급 계획/집행은 payables/payments이며, invoice_lines는 참고 분해 정보다.
 -- ======================================================================
 CREATE TABLE invoice_lines (
-  invl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '인보이스 라인 PK',
-  invl_inv_sn BIGINT UNSIGNED NOT NULL COMMENT '인보이스 PK(invoices)',
-  invl_line_no INT NOT NULL COMMENT '문서 내 라인번호',
+  invl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청 라인 PK(선택)',
 
-  invl_line_type ENUM('GOODS','CHARGE') COMMENT '라인 유형(ENUM) | GOODS:상품/재화, CHARGE:부대비용/수수료'
-    NOT NULL COMMENT '라인 유형(ENUM) | GOODS:물품, CHARGE:부대비용/서비스/세금/할인 등',
+  invl_inv_sn BIGINT UNSIGNED NOT NULL COMMENT '지급요청 PK(invoices)',
+  invl_line_no INT NOT NULL COMMENT '문서 내 라인번호(있으면). 없으면 내부적으로 1..N 부여',
 
-  /* GOODS 라인 연결(선택) */
-  po_sn BIGINT UNSIGNED NULL COMMENT '관련 PO PK(purchase_orders) | 문서가 PO 단위로 묶일 때 선택',
-  invl_pol_sn BIGINT UNSIGNED NULL COMMENT '관련 PO 라인 PK(po_lines) | 가능하면 연결(선택)',
+  -- 라인 성격(지급요청 내역 분해)
+  -- - GOODS: 재화/물품(품목) 내역
+  -- - CHARGE: 부대비용/수수료/서비스/할인/조정 등
+  invl_line_type ENUM('GOODS','CHARGE')
+    NOT NULL
+    COMMENT '라인 유형(ENUM) | GOODS:재화/물품, CHARGE:부대비용/서비스/수수료/할인/조정 등',
 
-  /* CHARGE 라인 연결(선택) */
-  ct_sn BIGINT UNSIGNED NULL COMMENT '관련 비용 PK(costs) | 배송비/통관비 등 비용으로 이미 관리되는 경우 연결(선택)',
-  invl_charge_category VARCHAR(40) NULL COMMENT 'CHARGE 세부 분류(텍스트/코드) | 예: SHIPPING_DOMESTIC, CUSTOMS_DUTY, SERVICE_FEE, TAX, DISCOUNT | 권장 charge_category(확장 가능): SHIPPING_DOMESTIC/SHIPPING_INTERNATIONAL/CUSTOMS_DUTY/CUSTOMS_BROKER_FEE/INSPECTION_FEE/WAREHOUSE_FEE/PACKAGING_FEE/INSURANCE_FEE/HANDLING_FEE/SERVICE_FEE/TAX/DISCOUNT/OTHER',
+  /* 선택적 연결(가능하면 링크하되 강제하지 않음)
+   * - PO/PO라인/Cost와의 연결은 "정합성 강제"가 아니라 추적 편의를 위한 참조다.
+   * - invoices 자체는 지급요청 단위이므로, 물류/납품 단위와 1:1 강제를 하지 않는다.
+   */
 
-  invl_description VARCHAR(500) NULL COMMENT '라인 설명(품목명/서비스명/비고)',
-  invl_qty DECIMAL(14,3) NULL COMMENT '수량(있으면)',
-  invl_unit_price DECIMAL(18,2) NULL COMMENT '단가(있으면)',
-  invl_amount DECIMAL(18,2) NOT NULL COMMENT '라인 금액(할인 등은 음수 가능)',
-  invl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '라인 통화(기본: invoices.ccy)',
+  -- GOODS 라인 참조(선택)
+  po_sn BIGINT UNSIGNED NULL COMMENT '관련 PO PK(purchase_orders) | 지급요청이 특정 PO에 대응될 때 선택',
+  invl_pol_sn BIGINT UNSIGNED NULL COMMENT '관련 PO 라인 PK(po_lines) | 품목이 PO 라인과 대응될 때 선택',
+
+  -- CHARGE 라인 참조(선택)
+  ct_sn BIGINT UNSIGNED NULL COMMENT '관련 비용 PK(costs) | 배송비/통관비 등 이미 비용원장에 있는 항목과 대응 시 선택',
+  invl_charge_category VARCHAR(40) NULL COMMENT 'CHARGE 세부 분류(텍스트/코드) | 예: SHIPPING, CUSTOMS, SERVICE_FEE, TAX, DISCOUNT, OTHER (필요 시 확장)',
+
+  invl_description VARCHAR(500) NULL COMMENT '라인 설명(품목명/서비스명/비고 등)',
+  invl_qty DECIMAL(14,3) NULL COMMENT '수량(문서에 있으면)',
+  invl_unit_price DECIMAL(18,2) NULL COMMENT '단가(문서에 있으면)',
+  invl_amount DECIMAL(18,2) NOT NULL COMMENT '라인 금액(할인/차감은 음수 가능)',
+  invl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '라인 통화(기본: invoices.inv_ccy)',
 
   invl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   invl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -701,7 +759,77 @@ CREATE TABLE invoice_lines (
   CONSTRAINT fk_invoice_lines_pol
     FOREIGN KEY (invl_pol_sn) REFERENCES po_lines(pol_sn),
   CONSTRAINT fk_invoice_lines_ct
-    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)) COMMENT='인보이스 라인(GOODS/CHARGE). invoice는 지급단위가 아니므로 지급 연결은 payables에서 수행';
+    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)
+
+) COMMENT='지급요청 라인(선택) - documents(파일) 목록이 아니라 지급요청 내역 분해용. 세금계산서는 tax_invoices로 분리';
+
+
+-- ======================================================================
+-- TABLE: invoice_cost_allocations
+-- SCOPE: 공공조달 도메인 - "지급요청(invoice) ↔ 비용(cost)" 근거 매핑 원장
+--
+-- 핵심 정의
+-- 1) invoices 는 거래처로부터의 "지급요청 단위"이고,
+--    costs 는 회사 내부의 "비용원천 원장"이다.
+-- 2) invoice_cost_allocations 는
+--    "이 지급요청(invoice)이 어떤 비용(cost)을 근거로 얼마를 청구한 것인지"
+--    를 명확히 연결하는 정규화 테이블이다.
+--
+-- 3) 관계 특성
+--    - cost 1 : invoice N  (하나의 비용에 대해 여러 번 청구 가능)
+--    - invoice 1 : cost N  (하나의 청구서가 여러 비용을 묶을 수 있음)
+--    → 따라서 N:M 관계이며, allocations 로 표현한다.
+--
+-- 4) 금액 의미
+--    - ica_amount 는 해당 invoice 가 특정 cost 를 기준으로 청구한 금액이다.
+--    - 하나의 invoice 총액(inv_total_amount)은
+--      여러 invoice_cost_allocations.ica_amount 의 합과 일치해야 하는 것이
+--      "권장" 정책이지만, DB 차원에서 강제하지는 않는다.
+--      (세무/할인/조정 등 예외를 서비스 레벨에서 허용하기 위함)
+--
+-- 5) payables/payments 와의 관계
+--    - invoice_cost_allocations 는 "근거 매핑"이고,
+--      실제 지급 계획/집행은 payables / payments 에서 별도로 관리한다.
+--    - 지급 분할은 payables, 실지급은 payments 가 담당한다.
+--
+-- 6) documents 와의 관계
+--    - 거래명세서/청구서 PDF 는 documents 에 저장하고,
+--      document_links 로 invoices(inv_sn)에 연결한다.
+--    - invoice_cost_allocations 는 파일 저장과 무관하다.
+--
+-- 설계 원칙
+--    - target 은 cost 1개로 고정한다 (우리 _allocations 스타일 유지)
+--    - nullable target 을 두지 않는다.
+-- ======================================================================
+CREATE TABLE invoice_cost_allocations (
+  ica_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청↔비용 매핑 PK',
+
+  inv_sn BIGINT UNSIGNED NOT NULL COMMENT '지급요청 PK(invoices)',
+  ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
+
+  ica_amount DECIMAL(18,2) NOT NULL COMMENT '해당 invoice 가 이 cost 를 기준으로 청구한 금액(부분 청구 가능)',
+  ica_note VARCHAR(500) NULL COMMENT '비고(부분청구 사유/정산 메모 등)',
+
+  ica_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
+  ica_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+
+  PRIMARY KEY (ica_sn),
+
+  -- 동일 invoice 가 동일 cost 를 중복으로 매핑하는 실수 방지
+  -- 부분청구는 ica_amount 로 표현하며, 하나의 (inv_sn, ct_sn) 조합은 1행으로 관리 권장
+  UNIQUE KEY uk_invoice_cost (inv_sn, ct_sn),
+
+  KEY idx_invoice_cost_inv (inv_sn),
+  KEY idx_invoice_cost_ct (ct_sn),
+
+  CONSTRAINT fk_invoice_cost_inv
+    FOREIGN KEY (inv_sn) REFERENCES invoices(inv_sn),
+
+  CONSTRAINT fk_invoice_cost_ct
+    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)
+
+) COMMENT='지급요청(invoices)과 비용(costs)의 근거 매핑 원장 - N:M 관계를 allocations 로 표현';
+
 
 
 /* =======================================================================
@@ -714,16 +842,19 @@ CREATE TABLE invoice_lines (
 -- DESC : 지급 단위(payable). invoice는 지급단위가 아니며, payment는 결과만 기록
 -- NOTE : payables는 내부 '지급 단위'다(결재/보류/대기/분할지급의 기준).
 -- NOTE : 승인/보류/부분지급/완료 같은 상태는 payables에만 둔다(실지급 결과는 payments).
+-- NOTE : payables는 거래처 지급요청(invoices) 1건을 "집행하기 위한 내부 실행 단위"다. (payable 1 = invoice 1)
+-- NOTE : invoice 분할지급(계약금/중도금/잔금/월별 분할 등)은 invoice 1건에 대해 payables를 여러 건 생성하여 표현한다. (invoice 1 → payable N)
 -- ======================================================================
 CREATE TABLE payables (
   pbl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청/지급단위 PK(payable)',
+  pbl_inv_sn BIGINT UNSIGNED NOT NULL COMMENT '출처 지급요청 PK(invoices). payables는 invoices 1건을 집행하기 위한 내부 실행 단위(1 payable = 1 invoice). invoice 분할지급은 payables를 여러 건 생성하여 표현',
 
   pbl_payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 대상 업체 PK(parties) | 송금/정산 상대',
   pbl_payee_bk_sn BIGINT UNSIGNED NULL COMMENT '지급 예정인 금액을 수취할 거래처의 계좌를 식별하는 외래키이다. 지급 승인 시점에 지정된 수취 계좌를 의미한다.',
 
-  pbl_payable_status ENUM('CREATED','APPROVED','ON_HOLD','PARTIALLY_PAID','PAID','CANCELLED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류, PARTIALLY_PAID:부분지급, PAID:완료, CANCELLED:취소'
+  pbl_payable_status ENUM('CREATED','APPROVED','ON_HOLD','PAID','CANCELLED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류, PAID:완료, CANCELLED:취소'
     NOT NULL DEFAULT 'CREATED'
-    COMMENT '지급 상태(ENUM) | CREATED:작성, APPROVED:승인, ON_HOLD:보류, PARTIALLY_PAID:부분지급, PAID:완료, CANCELLED:취소',
+    COMMENT '지급 상태(ENUM) | CREATED:작성, APPROVED:승인, ON_HOLD:보류, PAID:완료, CANCELLED:취소',
 
   pbl_requested_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees) | 구매/운영/재무 등',
   pbl_approved_by_a_sn BIGINT UNSIGNED NULL COMMENT '승인자 PK(assignees) | 승인 시 설정',
@@ -736,7 +867,7 @@ CREATE TABLE payables (
   pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '지급 대상 총액(업무 기준)',
 
   /* 편의 필드(선택): payments 합산으로도 계산 가능 */
-  paid_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지급 완료 누적액(편의). 실제 값은 payment_payable_allocations 합으로도 검증 가능',
+  paid_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지급 완료 누적액(편의). 운영 정책상 payable:payment는 1:1이며, payment_payable_allocations로 검증 가능',
 
   pbl_note VARCHAR(500) NULL COMMENT '재무 메모(지급 사유/특이사항)',
 
@@ -744,11 +875,14 @@ CREATE TABLE payables (
   pbl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (pbl_sn),
+  KEY idx_payables_inv (pbl_inv_sn),
   KEY idx_payables_payee (pbl_payee_pt_sn),
   KEY idx_payables_status (pbl_payable_status),
   KEY idx_payables_due (pbl_due_at),
   KEY idx_payables_requested_by (pbl_requested_by_a_sn),
 
+  CONSTRAINT fk_payables_inv
+    FOREIGN KEY (pbl_inv_sn) REFERENCES invoices(inv_sn),
   CONSTRAINT fk_payables_payee
     FOREIGN KEY (pbl_payee_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_payables_requested_by
@@ -757,79 +891,27 @@ CREATE TABLE payables (
     FOREIGN KEY (pbl_approved_by_a_sn) REFERENCES assignees(a_sn)) COMMENT='지급 단위(payable). invoice는 지급단위가 아니며, payment는 결과만 기록';
 
 
--- ======================================================================
--- TABLE: payable_invoice_allocations
--- DESC : payable이 어떤 invoice(들)을 어떤 금액으로 정산/지급하는지 배분(묶음/분할/부분 지급 지원)
--- NOTE : payable 1건이 여러 invoice를 포함할 수 있으며, 그 연결/귀속은 payable_invoice_allocations로 관리한다.
--- ======================================================================
-CREATE TABLE payable_invoice_allocations (
-  pbia_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payable-invoice 배분 PK',
-  pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
-  inv_sn BIGINT UNSIGNED NOT NULL COMMENT 'invoice PK(invoices)',
-
-  pbia_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payable이 해당 invoice에서 커버하는 금액(부분/분할/묶음 지원)',
-  pbia_note VARCHAR(500) NULL COMMENT '비고',
-
-  pbia_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  pbia_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-  PRIMARY KEY (pbia_sn),
-  UNIQUE KEY uk_payable_invoice_alloc (pbl_sn, inv_sn),
-  KEY idx_payable_invoice_alloc_pbl (pbl_sn),
-  KEY idx_payable_invoice_alloc_inv (inv_sn),
-
-  CONSTRAINT fk_payable_invoice_alloc_pbl
-    FOREIGN KEY (pbl_sn) REFERENCES payables(pbl_sn),
-  CONSTRAINT fk_payable_invoice_alloc_inv
-    FOREIGN KEY (inv_sn) REFERENCES invoices(inv_sn)
-) COMMENT='payable이 어떤 invoice(들)을 어떤 금액으로 정산/지급하는지 배분(묶음/분할/부분 지급 지원)';
-
-
--- ======================================================================
--- TABLE: payable_cost_allocations
--- DESC : payable이 어떤 cost(들)을 어떤 금액으로 정산/지급하는지 배분(프로젝트 원가(cost)와 지급(payable) 연결)
--- NOTE : payable 1건은 여러 cost에 안분/귀속될 수 있으며, 그 연결/귀속은 payable_cost_allocations로 관리한다.
--- ======================================================================
-CREATE TABLE payable_cost_allocations (
-  pbca_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payable-cost 배분 PK',
-  pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
-  ct_sn BIGINT UNSIGNED NOT NULL COMMENT 'cost PK(costs)',
-
-  pbca_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payable이 해당 cost에 대해 정산하는 금액(부분/분할/묶음 지원)',
-  pbca_note VARCHAR(500) NULL COMMENT '비고',
-
-  pbca_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  pbca_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-  PRIMARY KEY (pbca_sn),
-  UNIQUE KEY uk_payable_cost_alloc (pbl_sn, ct_sn),
-  KEY idx_payable_cost_alloc_pbl (pbl_sn),
-  KEY idx_payable_cost_alloc_ct (ct_sn),
-
-  CONSTRAINT fk_payable_cost_alloc_pbl
-    FOREIGN KEY (pbl_sn) REFERENCES payables(pbl_sn),
-  CONSTRAINT fk_payable_cost_alloc_ct
-    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)
-) COMMENT='payable이 어떤 cost(들)을 어떤 금액으로 정산/지급하는지 배분(프로젝트 원가(cost)와 지급(payable) 연결)';
-
 
 /* =======================================================================
- * 5) Payments(실지급 결과) <-> Payables(지급단위) 연결(ALTER 없이)
- *    - 1 payment가 여러 payable을 커버하거나, 1 payable이 여러 payment로 분할될 수 있다.
+ * 5) Payments(실지급 결과) <-> Payables(지급단위) 연결(운영 정책: 1:1)
+ *    - 본 시스템에서는 payables가 '지급 분할'의 유일한 단위다.
+ *    - payables 1건은 payments 1건으로 집행된다(1:1 불변).
+ *    - 여러 번 나눠 지급하려면 payables를 여러 건으로 분할한다.
  * ======================================================================= */
-
 
 -- ======================================================================
 -- TABLE: payment_payable_allocations
--- DESC : payment(실지급 결과)와 payable(지급단위)의 배분 연결(ALTER 없이 1:N/N:1 지원)
--- NOTE : payment 1건이 여러 payable에 안분(또는 1:1)될 수 있으며, 그 연결/정산 귀속은 payment_payable_allocations로 관리한다.
+-- DESC : payment(실지급) ↔ payable(지급단위) 연결(운영 정책: 1:1)
+-- NOTE : payables 1건은 payments 1건으로 집행된다(1:1).
+-- NOTE : 지급을 여러 번 나누려면 payables를 여러 건으로 분할한다.
+-- NOTE : 이 테이블은 스키마상 N:M 형태로 존재하더라도, 서비스 레벨에서 1:1만 허용/검증한다.
 -- ======================================================================
 CREATE TABLE payment_payable_allocations (
   ppa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payment-payable 배분 PK',
   pay_sn BIGINT UNSIGNED NOT NULL COMMENT 'payment PK(payments)',
   pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
 
-  ppa_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payment가 해당 payable에 귀속되는 금액(부분/분할/묶음 지원)',
+  ppa_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payment가 해당 payable에 귀속되는 금액(운영 정책상 payable 1: payment 1). 일반적으로 payable 총액과 동일',
   ppa_note VARCHAR(500) NULL COMMENT '비고',
 
   ppa_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -844,4 +926,60 @@ CREATE TABLE payment_payable_allocations (
     FOREIGN KEY (pay_sn) REFERENCES payments(pay_sn),
   CONSTRAINT fk_payment_payable_alloc_pbl
     FOREIGN KEY (pbl_sn) REFERENCES payables(pbl_sn)
-) COMMENT='payment(실지급 결과)와 payable(지급단위)의 배분 연결(ALTER 없이 1:N/N:1 지원)';
+) COMMENT='payment(실지급 결과)와 payable(지급단위)의 연결(운영 정책: 1:1). 분할지급은 payable을 여러 건으로 분할하여 처리';
+
+
+CREATE TABLE tax_invoices (
+  ti_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '전자세금계산서 PK',
+  ti_approval_no VARCHAR(50) NOT NULL COMMENT '승인번호/승인키(외부 정본 식별자)',
+  ti_issue_dt DATE NOT NULL COMMENT '작성일/발급일',
+  ti_status ENUM('NORMAL','MODIFIED','CANCELLED') NOT NULL DEFAULT 'NORMAL'
+    COMMENT '상태: NORMAL(정상), MODIFIED(수정), CANCELLED(취소/무효)',
+
+  ti_supplier_biz_no VARCHAR(20) NOT NULL COMMENT '공급자 사업자번호(문자열)',
+  ti_buyer_biz_no VARCHAR(20) NOT NULL COMMENT '공급받는자 사업자번호(문자열)',
+
+  ti_supply_amount DECIMAL(18,3) NOT NULL COMMENT '공급가액',
+  ti_tax_amount DECIMAL(18,3) NOT NULL COMMENT '세액',
+  ti_total_amount DECIMAL(18,3) NOT NULL COMMENT '합계금액(공급가+세액)',
+  ti_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(기본 KRW)',
+
+  ti_recon_status ENUM('UNMATCHED','PARTIAL','MATCHED') NOT NULL DEFAULT 'UNMATCHED'
+    COMMENT '대사 상태(서비스 판단): UNMATCHED(미매칭), PARTIAL(부분), MATCHED(완료)',
+
+  ti_note VARCHAR(500) NULL COMMENT '비고',
+  ti_source VARCHAR(50) NOT NULL DEFAULT 'HOMETAX_API' COMMENT '수신 소스',
+
+  ti_create_dt DATETIME NOT NULL COMMENT '생성일시',
+  ti_update_dt DATETIME NOT NULL COMMENT '수정일시',
+
+  PRIMARY KEY (ti_sn),
+  UNIQUE KEY uk_ti_approval_no (ti_approval_no),
+  KEY idx_ti_issue_dt (ti_issue_dt),
+  KEY idx_ti_recon_status (ti_recon_status)
+) COMMENT='전자세금계산서(세무 정본) - payments 대사 중심';
+
+
+CREATE TABLE tax_invoice_payment_allocations (
+  tipa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '세금계산서↔지급 대사 배분 PK',
+  ti_sn BIGINT UNSIGNED NOT NULL COMMENT '전자세금계산서 PK(tax_invoices)',
+  pay_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 PK(payments)',
+
+  tipa_amount DECIMAL(18,3) NOT NULL COMMENT '대사 매칭 금액(부분 매칭 허용)',
+  tipa_note VARCHAR(500) NULL COMMENT '비고(매칭 규칙/사유/수동조정 메모)',
+
+  tipa_create_dt DATETIME NOT NULL COMMENT '생성일시',
+  tipa_update_dt DATETIME NOT NULL COMMENT '수정일시',
+
+  PRIMARY KEY (tipa_sn),
+
+  -- 같은 ti↔pay 조합이 여러 줄로 쪼개질 필요는 없으므로(부분은 amount로 표현),
+  -- 실수 방지로 유니크 권장. (정말 여러 줄이 필요하면 이 제약 제거)
+  UNIQUE KEY uk_tipa (ti_sn, pay_sn),
+
+  KEY idx_tipa_ti (ti_sn),
+  KEY idx_tipa_pay (pay_sn),
+
+  CONSTRAINT fk_tipa_ti FOREIGN KEY (ti_sn) REFERENCES tax_invoices(ti_sn),
+  CONSTRAINT fk_tipa_pay FOREIGN KEY (pay_sn) REFERENCES payments(pay_sn)
+) COMMENT='전자세금계산서↔payments 대사 배분(부분 매칭/N:M 지원)';

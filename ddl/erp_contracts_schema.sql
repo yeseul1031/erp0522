@@ -516,7 +516,7 @@ CREATE TABLE inhouse_cases (
 
 -- ======================================================================
 -- TABLE: inhouse_bom_lines
--- DESC : 자체제작 BOM(자재 소요) ... 제작 자재가 있으면 구매도 있을텐데, 이건 어떻게 기록하지...고민 필요
+-- DESC : 자체제작 BOM(자재 소요) ... 기본적인 견적/발주 프로세스는 scl을 이용하고, 여긴 제조 특화된 BOM 들을 다루자. 자세한건 추후 Develop하기
 -- ======================================================================
 CREATE TABLE inhouse_bom_lines (
   ibl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '제작 BOM 라인 PK',
@@ -617,23 +617,26 @@ CREATE TABLE rfq_lines (
   rfql_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 PK(업체에 보낸 실제 1줄) - 국내/해외 공용',
   rfql_rfq_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs)',
   rfql_no INT NOT NULL COMMENT 'RFQ 내 줄번호',
-  rfql_g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
+-- g_sn은 수급쪽에서 관리하는거고, 견적서에서는 업체와 조율된 품목정보를 직접 쓰는게 맞다.
+-- rfql_g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
 
   /* 견적요청정보 */
   rfql_req_name VARCHAR(128) NOT NULL COMMENT '(견적요청) 품목명(예: 십자 드라이버)',
   rfql_req_model VARCHAR(128) NOT NULL default '' COMMENT '(견적요청) 모델명',
+  rfql_req_manufacturer_name VARCHAR(128) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
   rfql_req_qty DECIMAL(14,3) NOT NULL COMMENT '(견적요청) 수량(납품 약속 수량)',
   rfql_req_unit VARCHAR(20) NULL COMMENT '(견적요청) 단위(예: EA, SET)',
   rfql_req_unit_price DECIMAL(18,2) NULL COMMENT '(견적요청) 희망 단가',
-  rfql_req_note VARCHAR(500) NULL COMMENT '라인 특이사항/요청사항(업체 전달용)',
+  rfql_req_note VARCHAR(500) NULL COMMENT '(견적요청) 라인 특이사항/요청사항(업체 전달용)',
 
   /* 견적응답정보 */
-  rfql_res_name VARCHAR(128) NOT NULL COMMENT '(견적요청) 품목명(예: 십자 드라이버)',
-  rfql_res_model VARCHAR(128) NOT NULL default '' COMMENT '(견적요청) 모델명',
-  rfql_res_qty DECIMAL(14,3) NOT NULL COMMENT '(견적요청) 수량',
-  rfql_res_unit VARCHAR(20) NULL COMMENT '(견적요청) 단위(예: EA, SET)',
-  rfql_res_unit_price DECIMAL(18,2) NULL COMMENT '(견적요청) 견적받은 단가',
-  rfql_res_note VARCHAR(500) NULL COMMENT '라인 특이사항/요청사항(업체 전달용)',
+  rfql_res_name VARCHAR(128) NOT NULL COMMENT '(견적응답) 품목명(예: 십자 드라이버)',
+  rfql_res_model VARCHAR(128) NOT NULL default '' COMMENT '(견적응답) 모델명',
+  rfql_res_manufacturer_name VARCHAR(128) NULL COMMENT '(견적응답) 제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
+  rfql_res_qty DECIMAL(14,3) NOT NULL COMMENT '(견적응답) 수량',
+  rfql_res_unit VARCHAR(20) NULL COMMENT '(견적응답) 단위(예: EA, SET)',
+  rfql_res_unit_price DECIMAL(18,2) NULL COMMENT '(견적응답) 견적받은 단가',
+  rfql_res_note VARCHAR(500) NULL COMMENT '(견적응답) 라인 특이사항/요청사항(업체 전달용)',
 
   rfql_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   rfql_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -641,9 +644,7 @@ CREATE TABLE rfq_lines (
   PRIMARY KEY (rfql_sn),
   UNIQUE KEY uk_rfq_lines (rfql_rfq_sn, rfql_no),
   KEY idx_rfq_lines_rfq (rfql_rfq_sn),
-  KEY idx_rfq_lines_g (rfql_g_sn),
-  CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfql_rfq_sn) REFERENCES rfqs(rfq_sn),
-  CONSTRAINT fk_rfq_lines_g FOREIGN KEY (rfql_g_sn) REFERENCES goods(g_sn)
+  CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfql_rfq_sn) REFERENCES rfqs(rfq_sn)
 ) COMMENT='RFQ 라인(요청 1줄 + 회신 값(reply_*), 덮어쓰기 정책) - 국내/해외 통합';
 
 
@@ -694,8 +695,8 @@ CREATE TABLE purchase_orders (
 
   /* 수급 케이스 연결 */
   po_primary_sc_sn BIGINT UNSIGNED NULL COMMENT '대표 수급 케이스 PK(sourcing_cases) | 단독 진행이면 설정, 혼합이면 NULL 가능',
-  po_sourcing_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE','SERVICE')
-    NULL COMMENT '수급 방식(ENUM) | 헤더 편의/필터용(선택)',
+-- 혹시 나중에 수급방식 필드가 필요할지도 모르겠는데, 그때 추가하자.
+--  po_sourcing_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE','SERVICE') NULL COMMENT '수급 방식(ENUM) | 헤더 편의/필터용(선택)',
 
   /* 업체/작성자 */
   po_vendor_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '대상 업체 PK(parties)',
@@ -705,8 +706,6 @@ CREATE TABLE purchase_orders (
   po_source_rfq_sn BIGINT UNSIGNED NULL COMMENT '근거 RFQ PK(rfqs) | RFQ 기반 생성 시 연결',
 
   /* 발주 구분/상태 */
-  po_kind ENUM('NORMAL','SAMPLE') NOT NULL DEFAULT 'NORMAL'
-    COMMENT '발주 구분(ENUM) | NORMAL:본발주, SAMPLE:샘플발주',
   po_status ENUM('DRAFT','SENT','ACCEPTED','REJECTED','CANCELLED','CLOSED')
     NOT NULL COMMENT '발주 상태(ENUM)',
 
@@ -716,7 +715,7 @@ CREATE TABLE purchase_orders (
   po_expected_delivery_at DATE NULL COMMENT '예상 납기일(업무 이벤트)',
 
   /* 인도/납품/결제 */
-  po_delivery_method VARCHAR(40) NULL COMMENT '발주 이후 1차 물류 방식(텍스트) | 권장: PICKUP_BY_LOGISTICS, SELLER_SHIP_TO_COMPANY, SELLER_SHIP_TO_CUSTOMER (해외 확장: FORWARDER_MANAGED, COURIER, FREIGHT_TRUCK) | 필요 시 확장 가능',
+  po_delivery_method ENUM('PICKUP_BY_LOGISTICS', 'SELLER_SHIP_TO_COMPANY', 'SELLER_SHIP_TO_CUSTOMER') NULL COMMENT '판매처가 보내는 방식, 회사 관점의 흐름(회사로 오냐/직송이냐/직접 픽업이냐)',
   po_delivery_address VARCHAR(500) NULL COMMENT '인도/납품 주소',
   po_trade_terms VARCHAR(20) NULL COMMENT '인도조건(Incoterms 등) | 해외용 주로 사용(옵션)',
 
@@ -744,7 +743,6 @@ CREATE TABLE purchase_orders (
   KEY idx_pos_primary_sc (po_primary_sc_sn),
   KEY idx_pos_source_rfq (po_source_rfq_sn),
   KEY idx_pos_status (po_status),
-  KEY idx_pos_sourcing_type (po_sourcing_type),
 
   CONSTRAINT fk_pos_vendor FOREIGN KEY (po_vendor_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_pos_creator FOREIGN KEY (po_a_sn) REFERENCES assignees(a_sn),
@@ -764,7 +762,8 @@ CREATE TABLE po_lines (
   pol_no INT NOT NULL COMMENT '발주서 내 줄번호',
 
   /* 품목 */
-  g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
+-- g_sn 은 수급쪽에서 관리하는거고, 발주서에서는 업체와 조율된 품목정보를 직접 쓰는게 맞다.
+--  g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
   pol_qty DECIMAL(14,3) NOT NULL COMMENT '발주 수량(MOQ 등으로 더 클 수 있음)',
 
   /* 가격/통화(해외 포함) */
@@ -788,10 +787,8 @@ CREATE TABLE po_lines (
   PRIMARY KEY (pol_sn),
   UNIQUE KEY uk_po_lines (pol_po_sn, pol_no),
   KEY idx_po_lines_po (pol_po_sn),
-  KEY idx_po_lines_g (g_sn),
   KEY idx_po_lines_source_rfql (source_rfql_sn),
   CONSTRAINT fk_po_lines_po FOREIGN KEY (pol_po_sn) REFERENCES purchase_orders(po_sn),
-  CONSTRAINT fk_po_lines_g FOREIGN KEY (g_sn) REFERENCES goods(g_sn),
   CONSTRAINT fk_po_lines_source_rfql FOREIGN KEY (source_rfql_sn) REFERENCES rfq_lines(rfql_sn)
 ) COMMENT='발주서 라인(PO 한줄) - 국내/해외 통합';
 
