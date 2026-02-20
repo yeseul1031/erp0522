@@ -605,7 +605,8 @@ CREATE TABLE po_cost_links (
 --
 -- 2) invoices 는 '지급 단위'가 아니다. (실제 지급은 payments, 지급 실행 요청/승인은 payables)
 --    - invoice 1건이 payables 여러 건으로 분할될 수 있다. (예: 계약금/중도금/잔금, 월별 분할 지급 등)
---    - 반대로 여러 invoice를 묶어서 1건 payable로 처리할 수도 있다(업무 정책에 따라).
+--    - payables는 invoice 1건을 집행하기 위한 단위이며, payable 1건은 invoice 1건에만 귀속된다(1:1).
+--    - 여러 번 나눠 지급하려면 invoice 1건에 대해 payables를 여러 건 생성하여 분할 집행한다(invoice 1 → payable N).
 --    - 따라서 invoices 는 "지급요청 근거/청구 단위"이고, 집행 단위는 payables/payments가 정본이다.
 --
 -- 3) documents(파일)와의 관계
