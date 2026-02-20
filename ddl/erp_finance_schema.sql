@@ -24,7 +24,7 @@
  * - finance 레이어는 "무엇을 얼마에 샀는가 / 팔았는가"를
  *   독립적으로 정의하지 않는다.
  *
- * - 비용(costs) 원장, 비용 귀속(cost_allocations),
+ * - 비용(costs) 원장, 비용 귀속(*_cost_links),
  *   실제 지급(payments) 및 관련 증빙을 관리한다.
  *
  * - 금액, 비용, 지급, 정산, 환율, 세금 등의 정보는
@@ -279,8 +279,8 @@ CREATE TABLE receipts (
 -- ======================================================================
 -- TABLE: costs
 -- DESC : 비용(원장)
--- NOTE : costs는 '비용 발생' 원장이다(사유/금액/발생일). 귀속/안분은 cost_allocations로만 관리한다(원장은 단순 유지).
--- NOTE : 비용은 프로젝트(p_sn)/주문라인(ol_sn)/override(olo_sn)/수급케이스(sc_sn) 등에 귀속될 수 있다(대상은 cost_allocations에서만 표현).
+-- NOTE : costs는 '비용 발생' 원장이다(사유/금액/발생일). 귀속/안분은 *_cost_links 관리한다(원장은 단순 유지).
+-- NOTE : 비용은 프로젝트(p_sn)/주문라인(ol_sn)/override(olo_sn)/수급케이스(sc_sn) 등에 귀속될 수 있다(대상은 *_cost_links 에서만 표현).
 -- NOTE : 비용 증빙(거래명세서/정산근거/통관서류 등)은 documents+document_links로 costs에 연결한다(다중 첨부 가능).
 -- NOTE : 전자세금계산서(XML/PDF) 원본은 tax_invoices에 documents+document_links로 연결하고,
 --        tax_invoices ↔ payments 대사는 tax_invoice_payment_allocations로 관리한다.
@@ -390,43 +390,6 @@ CREATE TABLE payments (
   CONSTRAINT fk_payments_creator
     FOREIGN KEY (pay_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='지급/결제(카드/이체/현금) 원장';
-
-
-
--- ======================================================================
--- TABLE: cost_allocations
--- DESC : 비용 배부(프로젝트/주문서/주문라인/override/수급케이스 단위 분배)
--- NOTE : 비용 귀속 대상은 p_sn/o_sn/ol_sn/olo_sn/sc_sn을 지원한다(비용 원장(ct_*)에는 귀속을 직접 저장하지 않는다).
--- NOTE : 퀵 비용(예: 카드결제 퀵비)은 PO가 아니라 'costs + cost_allocations'로만 귀속한다.
--- ======================================================================
-CREATE TABLE cost_allocations (
-  ca_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 배부 PK',
-  ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
-  p_sn BIGINT UNSIGNED NULL COMMENT '프로젝트 PK(projects) | 여러 프로젝트 공통 비용이면 NULL 가능(배부 행 여러 개로 분해)',
-  ol_sn BIGINT UNSIGNED NULL COMMENT '주문라인 PK(order_lines) | 특정 납품 항목을 위한 비용(검사/가공 등)',
-  olo_sn BIGINT UNSIGNED NULL COMMENT '주문라인 override PK(order_line_overrides) | 희소 케이스 구성품/분할 단위 비용',
-  sc_sn BIGINT UNSIGNED NULL COMMENT '수급케이스 PK(sourcing_cases) | 특정 수급(국내/해외/제작) 건에 귀속되는 비용',
-  allocated_amount DECIMAL(18,2) NOT NULL COMMENT '배부 금액',
-  ca_note VARCHAR(500) NULL COMMENT '비고',
-  ca_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  ca_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-  PRIMARY KEY (ca_sn),
-  KEY idx_cost_allocations_ct (ct_sn),
-  KEY idx_cost_allocations_p (p_sn),
-  KEY idx_cost_allocations_ol (ol_sn),
-  KEY idx_cost_allocations_olo (olo_sn),
-  KEY idx_cost_allocations_sc (sc_sn),
-  CONSTRAINT fk_cost_allocations_costs
-    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn),
-  CONSTRAINT fk_cost_allocations_projects
-    FOREIGN KEY (p_sn) REFERENCES projects(p_sn),
-  CONSTRAINT fk_cost_allocations_order_lines
-    FOREIGN KEY (ol_sn) REFERENCES order_lines(ol_sn),
-  CONSTRAINT fk_cost_allocations_order_line_overrides
-    FOREIGN KEY (olo_sn) REFERENCES order_line_overrides(olo_sn),
-  CONSTRAINT fk_cost_allocations_sourcing_cases
-    FOREIGN KEY (sc_sn) REFERENCES sourcing_cases(sc_sn)
-) COMMENT='비용 배부(프로젝트/주문서/주문라인/override/수급케이스 단위 분배)';
 
 
 
