@@ -861,11 +861,12 @@ CREATE TABLE payables (
  *    - 본 시스템에서는 payables가 '지급 분할'의 유일한 단위다.
  *    - payables 1건은 payments 1건으로 집행된다(1:1 불변).
  *    - 여러 번 나눠 지급하려면 payables를 여러 건으로 분할한다.
+ *    - 카드결제의 경우 invoices와 payables 없이 costs → payments로 바로 연결된다.
  * ======================================================================= */
 
 -- ======================================================================
 -- TABLE: payment_payable_allocations
--- DESC : payment(실지급) ↔ payable(지급단위) 연결(운영 정책: 1:1)
+-- DESC : payment(실지급) ↔ payable(지급단위) 연결(운영 정책: 1:1, 승인 이체 흐름의 경우에 한정)
 -- NOTE : payables 1건은 payments 1건으로 집행된다(1:1).
 -- NOTE : 지급을 여러 번 나누려면 payables를 여러 건으로 분할한다.
 -- NOTE : 이 테이블은 스키마상 N:M 형태로 존재하더라도, 서비스 레벨에서 1:1만 허용/검증한다.
