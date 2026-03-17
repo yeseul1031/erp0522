@@ -95,10 +95,12 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 
 ### 4.1 99% 경로 vs 1% 희소 케이스
 #### 99% 경로(운영 편의성 우선)
-대부분은 **주문라인 1개 = 실제 구매/납품 상품(goods) 1개**다.  
-그래서 `order_lines.ol_default_g_sn`(기본 goods FK)을 제공한다.
+대부분은 **주문라인 1개 = 수급 케이스 1개 = 실행 라인 1개**로 끝난다.  
+즉 계약상 요구(`order_lines`)와 수급 실행(`sourcing_cases` / `sourcing_case_lines`)이 거의 1:1로 대응된다.
 
-- override가 없다면 `ol_default_g_sn`을 사용해 RFQ/PO 라인을 자동 생성할 수 있다.
+- override가 없다면 보통 `sourcing_cases` 1건을 만들고,
+  그 아래 `sourcing_case_lines` 1건으로 RFQ/PO 실행 기준을 잡는다.
+- RFQ/PO 라인은 항상 `sourcing_case_lines`를 참조하며, 계약 측 요구는 `ol / olo` 참조로 화면에 함께 표시한다.
 
 #### 1% 희소 케이스: Override 패턴(`order_line_overrides`)
 전체 스키마를 복잡하게 만들지 않기 위해 희소 케이스는 `order_line_overrides`로만 수용한다.
@@ -109,13 +111,24 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 - `BUNDLE` : 조합 납품(PC 등) 구성품 구매 단위
 
 **문서 생성 규칙(정본)**  
-override가 있으면 override 전개 결과를 우선하여 RFQ/PO 라인을 만든다.  
-override가 없으면 default goods를 사용한다.
+override가 있다고 해서 RFQ/PO 라인이 자동으로 override 전개 결과를 그대로 따르는 것은 아니다.  
+정본 실행 기준은 항상 `sourcing_case_lines`이며, override는 계약 범위를 고정/구체화할 때만 사용한다.
 
-### 4.2 Sourcing Case는 “발주 단위”가 아니라 “수급 전략/관리 단위”
+#### 4.1.1 `BUNDLE`(OLO)는 “BOM 정본”이 아니라 “계약 고정/고지 스냅샷(선택)”이다
+- `order_line_overrides(override_type='BUNDLE')`는 **조합 납품의 구성품을 계약/대외 커뮤니케이션 수준에서 고정하거나, 고객이 구성품/모델/브랜드를 계약에 명시한 경우**에만 사용한다.
+- 고객 요구가 “기능/성능 요구(예: 전화 가능, RAM 100GB, 저장공간 충분)”처럼 **구체 구성품이 계약에 고정되지 않은 경우**, OLO(BUNDLE)를 만들지 않고 `order_lines`에 요구사항을 기록한 뒤 **실제 수급/조립 계획은 SC 이하(SCL, RFQ/PO 라인)에서만 전개**한다.
+- 동일한 의미(구성품 전개)를 OLO와 SC 이하에 **혼용(사람마다 임의 선택)하지 않는다**.
+  - 원칙: “계약에 고정된 것 = OLO(선택)”, “내부 수급/조립 전개 = SC 이하”
+
+### 4.2 Sourcing Case는 “발주 단위”가 아니라 “계약 범위를 담당하는 수급 전략/관리 단위”
 - `sourcing_cases`는 수급 전략(국내/해외/제작) 및 진행 상태를 담는 관리 단위다.
+- 하나의 `sourcing_case`는 정확히 하나의 계약 범위만 담당한다.
+  - `order_line` 전체
+  - 또는 `order_line + 특정 override 1건`
 - 실제 구매 실행은 `purchase_orders`에서 이루어진다.
 - 하나의 `sourcing_case`에 여러 PO가 연결될 수 있다(분할 발주 가능).
+- `sourcing_case_lines`는 해당 `sourcing_case` 내부를 더 잘게 나눈 실행 라인이며,
+  계약 범위를 새로 정의하지 않는다.
 
 #### 다중 발주 검증 규칙(운영/리포트 레벨)
 하나의 `sourcing_case`에 속한 모든 `po_lines.qty` 합은,
@@ -125,11 +138,15 @@ override가 없으면 default goods를 사용한다.
 
 이 규칙은 DB 제약으로 강제하지 않고, 운영 검증/리포트로 점검한다.
 
-### 4.3 후보군 비교의 “그룹 키”는 goods가 아니라 `order_line`/`sc_sn`
-드라이버/CPU/모니터 등 후보 비교는 “같은 요구(주문라인) 또는 같은 수급 케이스” 단위로 묶인다.
+### 4.3 후보군 비교의 기준은 goods가 아니라 `order_line` / `override` / `sourcing_case`
+드라이버/CPU/모니터 등 후보 비교는 “같은 계약 요구 범위” 또는 “같은 수급 케이스” 단위로 묶인다.
 
-- BUNDLE(PC)처럼 한 `sc_sn` 안에 구성품이 섞일 수 있다.
-- 그래서 allocation에서 `olo_sn`을 사용하여 구성품/후보군/분할을 명시할 수 있어야 한다.
+- `sourcing_case`가 `order_line` 전체를 담당할 수도 있고,
+  특정 `override` 1건을 담당할 수도 있다.
+- `sourcing_case_lines.scl_ol_sn`, `sourcing_case_lines.scl_olo_sn`은
+  복잡한 sc → scl → RFQ/PO 구조에서도 화면/조회/집계에서 ol / olo 를 빠르게 함께 보여주기 위한 보조 연결이다.
+- 즉 `ol / olo`가 계약 범위의 정본이고,
+  `sc / scl`은 그 범위를 수급 도메인에서 실행하기 위한 레이어다.
 
 ### 4.4 RFQ/PO는 “진실의 원천(Source of Truth)”
 실제로 업체에 전달한 RFQ/PO 문서와 라인 정보가 구매/정산/증빙의 기준이다.
@@ -142,7 +159,7 @@ override가 없으면 default goods를 사용한다.
 ## 5. 국내/해외/제작 도메인 분리
 
 ### 5.1 수급 방식(Sourcing Type)
-수급 방식은 `sourcing_cases.sourcing_type`에서 관리한다.
+수급 방식은 `sourcing_cases.sc_type`에서 관리한다.
 
 - `DOMESTIC` : 국내 구매(견적→발주→납품)
 - `OVERSEAS` : 해외 구매(통화/인도조건/운송/통관 등 옵션 필드/프로세스 추가)
@@ -159,8 +176,8 @@ override가 없으면 default goods를 사용한다.
 - 해외 옵션(필요 시만): `trade_terms`, `ship_from_country`, `ship_to_country`, 라인 통화(`po_lines.ccy`) 등
 
 #### 소스 오브 트루스(중요)
-국내/해외 구분의 최종 기준은 **`sourcing_cases.sourcing_type`** 이다.  
-RFQ/PO 헤더의 sourcing_type은 조회/필터 편의용(선택)으로 둘 수 있다.
+국내/해외 구분의 최종 기준은 **`sourcing_cases.sc_type`** 이다.  
+RFQ/PO 헤더에는 별도 sourcing_type 컬럼을 두지 않고, 필요 시 대표 sc 또는 allocation을 통해 해석한다.
 
 ### 5.3 해외 비용의 환율 재현(감사 대응)
 해외 비용은 시점별 환율이 달라 감사 재현성이 중요하다.  
@@ -245,6 +262,68 @@ RFQ/PO 헤더의 sourcing_type은 조회/필터 편의용(선택)으로 둘 수 
   - 납품 증빙은 문서 허브로 연결(`documents` + `document_links`)
 - 회사 접촉/바코드 필요: 입고/출고/재고가 필요하면 `inventory_units` 생성 후 작업 라인에 담는다.
 
+### 8.5 재고(Inventory) 정본 모델 — goods / inventory_units / inventory_operations
+
+이 시스템에서 재고는 "수량"이 아니라 **사건(작업)과 실물 단위**로 관리한다.  
+물류/배송 레이어에서 재고 모델의 정본은 다음 3요소로 구성된다.
+
+#### 8.5.1 goods vs inventory_units (정의 vs 실물)
+- `goods`는 **품목 정의(Item Master)** 이다.  
+  물품명/제조사/모델/스펙 같은 “정의”가 들어가며, `g_stock`은 현재잔고(balance)로 운영한다.
+- `inventory_units(IU)`는 **회사 통제 하에 실물을 인수(수령)하고 바코드(관리번호)를 할당한 단위**다.  
+  즉, “아직 도착하지 않은 물건(미수령)”은 원칙적으로 IU로 만들지 않는다.
+
+#### 8.5.2 iu_status와 iu_location_type의 축 분리(핵심)
+`inventory_units`에는 두 축이 있다.
+
+- `iu_status` = **실물 상태(state)** (정본)
+  - ACTIVE: 보유(재고 집계 대상)
+  - RESERVED: 예약(출고/납품 예정으로 묶임; 다른 작업에 사용 금지)
+  - DELIVERED: 납품완료(고객 인도 완료; 재고 집계 제외)
+  - DAMAGED: 파손
+  - LOST: 분실
+  - CONSUMED: 소모(조립/가공 등 투입되어 재고 집계 제외)
+- `iu_location_type` = **현재 위치(location)** (정본)
+  - VENDOR / OFFICE / WAREHOUSE / CUSTOMER + 해외 확장(CUSTOMS/PORT/AIRPORT) + IN_TRANSIT
+
+**주의(과거 혼동 방지):**
+- `iu_status`에 `IN_OFFICE` 같은 위치성 값이 섞이면, `iu_location_type`과 중복/모순이 발생한다.  
+  따라서 본 설계에서는 `iu_status`를 상태(state) 전용으로 고정한다.
+- `IN_OFFICE`는 DDL 생성 과정에서 혼재된 값으로 판단되며, 의미 충돌 방지를 위해 제거되었다.
+
+#### 8.5.3 부품/완제품의 IU 운용(성능/운영 타협)
+IU를 “항상 1개=1행”으로 강제하면 대량 부품에서 row 폭발이 발생한다.  
+따라서 다음 원칙을 사용한다.
+
+- 부품류: 1박스/1로트를 IU 1행(`iu_qty > 1`)로 관리 가능
+  - 사용 시 **split(분할)** 하여 사용분 IU를 생성하고, 그 사용분 IU를 `CONSUMED` 처리한다.
+  - 원 IU(박스/로트)는 잔량만 감소한다.
+- 완제품: 기본적으로 IU qty=1(개별) 추적
+  - 납품/AS/리콜 대응을 고려하면 완제품은 개별 IU 추적이 정합성이 높다.
+
+#### 8.5.4 재고 원장(ledger): inventory_operations / inventory_operation_lines
+재고 변화는 단순히 IU 수량을 수정하는 것이 아니라, **작업(사건) 단위로 원장을 남긴다.**
+
+- `inventory_operations(IO)` = 작업 헤더(문서)
+  - `io_type`: RECEIPT / ISSUE / ASSEMBLY / DISASSEMBLY / ADJUSTMENT / SCRAP
+  - `io_status`: DRAFT / POSTED / CANCELLED
+    - io_status는 "문서/작업 처리 상태"이며 iu_status(실물 상태)와 다른 축이다.
+- `inventory_operation_lines(IOL)` = 원장 라인
+  - `iol_direction`: IN / OUT
+  - `iol_g_sn`, `iol_qty`: 어떤 품목이 얼마나 증감했는지
+  - `iol_iu_sn`: 선택(추적이 필요한 경우에만 IU를 연결)
+
+**조립/분해의 핵심**:  
+하나의 작업(IO) 안에 input(OUT) + output(IN) 라인이 같이 존재해야 한다.  
+그래야 “CPU 1 + RAM 2 → PC 1”이 **한 사건**으로 묶이고, 원인/결과 추적이 가능해진다.
+
+#### 8.5.5 goods.g_stock(현재잔고) 운영 선언
+`goods.g_stock`은 단순 캐시가 아니라, **IO/IOL 반영과 IU 상태 변화에 의해 트랜잭션으로 항상 최신화되는 현재잔고(balance)** 로 운영한다.
+
+- 운영 원칙: g_stock은 수동 수정 금지
+- 정합성: POSTED 된 재고 작업만 재고에 반영되고, 그 결과가 g_stock에 누적된다.
+
+
 ---
 
 ## 9. 용어 불변(혼동 방지)
@@ -304,8 +383,8 @@ RFQ/PO 헤더의 sourcing_type은 조회/필터 편의용(선택)으로 둘 수 
 - `o_status`: OPEN, IN_PROGRESS, CLOSED, CANCELLED
 - `ol_status`: OPEN, IN_PROGRESS, DELIVERED, CANCELLED
 - `override_type`: SPLIT, SUBSTITUTE, ADD_ON, BUNDLE
-- `sourcing_type`: DOMESTIC, OVERSEAS, IN_HOUSE
-- `sc_status`: OPEN, IN_PROGRESS, READY_TO_HANDOFF, HANDED_OFF, CANCELLED
+- `sc_type`: DOMESTIC, OVERSEAS, IN_HOUSE
+- `sc_status`: OPEN, SELF_ASSIGNED, ASSIGNING, ASSIGNEE_WORKING, CANCELLED, DONE
 - `cost_type`: PRODUCT, MATERIAL, SHIPPING, CUSTOMS, SERVICE, OTHER
 - `pay_method`: CARD, TRANSFER, CASH
 - `pay_status`: PENDING, PAID, CANCELLED
@@ -317,7 +396,8 @@ RFQ/PO 헤더의 sourcing_type은 조회/필터 편의용(선택)으로 둘 수 
 - `po_kind`: NORMAL, SAMPLE
 - `po_status`: DRAFT, SENT, ACCEPTED, REJECTED, CANCELLED, CLOSED
 - `tax_type`: TAX_INCLUDED, TAX_EXCLUDED, UNKNOWN
-- `sample_disposition`: DISCARD, KEEP_INTERNAL, INCLUDE_IN_DELIVERY
+- `pol_is_sample`: 0, 1
+- `pol_sample_disposition`: DISCARD, KEEP_INTERNAL, INCLUDE_IN_DELIVERY
 
 
 ---

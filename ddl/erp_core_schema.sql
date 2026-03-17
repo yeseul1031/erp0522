@@ -87,12 +87,14 @@ CREATE TABLE departments (
 -- TABLE: assignees
 -- DESC : 업무 담당자(직원/협업 담당자 공용)
 -- NOTE : 조직은 그룹웨어에서 관리하지만, DB Relation을 위해 간단히 엔티티 레코드를 유지한다. 그룹웨어 -> 사내인증 -> assignees, email을 키값으로 한다. email 바뀌면 수정 필요
+-- a_u_id는 users.id 이다. users는 인프라 디비고 독립적으로 간다.
+-- assignees에는 서비스 구현상 조인을 위한 필수(이름)만 비정규화하고, 남어진 필요하면 users 를 호출하는 api를 활용하기
 -- ======================================================================
 CREATE TABLE assignees (
   a_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '담당자 PK',
+  a_u_id BIGINT UNSIGNED not null comment 'users.id fk',
   a_d_sn BIGINT UNSIGNED NULL COMMENT '부서 PK',
   a_name VARCHAR(32) NOT NULL COMMENT '담당자 이름',
-  a_email VARCHAR(128) NULL COMMENT '이메일',
   a_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '재직/활성 여부(1=활성, 0=비활성)',
   a_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   a_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -160,7 +162,7 @@ CREATE TABLE goods (
   g_model_no VARCHAR(32) NULL COMMENT '모델번호',
   g_unit VARCHAR(16) NULL COMMENT '물품 단위(예: EA, 개, 톤 등)',
   g_average_price INT NOT NULL DEFAULT 0 COMMENT '평단가 (부가세 제외 금액, 해외는 포함된 금액)',
-  g_stock INT NOT NULL DEFAULT 0 COMMENT '재고(개수)',
+  g_stock INT NOT NULL DEFAULT 0 COMMENT 'IO/IOL(및 IU state 변화)에 의해 트랜잭션으로 항상 최신화되는 현재잔고(balance)',
   g_tags JSON NULL COMMENT '태그들 (JSON 배열 권장)' CHECK (json_valid(`g_tags`)),
   g_spec_json JSON NULL COMMENT '규격/옵션(JSON). 기존 text g_spec은 마이그레이션 시 JSON으로 포장하여 저장',
   g_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',

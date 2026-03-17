@@ -71,25 +71,43 @@
 프로젝트(계약) 담당자 영역  |  projects 1 (프로젝트)
                       |     |
                       |     +---> N order_lines (주문항목, 뭘 납품할지 정의)
-                      |              |    |
-                      |              |    +---> N order_line_overrides (예외 케이스)
-                      |              |              |
-                      |              +---> (논리적 1) sourcing_cases (수급 담당자 지정, 물리적으로는 여러개지만 논리적으로는 1:1 매핑임. sourcing_cases.dc_is_active = true)
-                      |                             |    |
-수급 담당자 영역          |   (수급 담당자가 수락할때 생성)    |    +---> 1 subtype_cases (국내/해외/자체제작 등)
-                      |                             |
-                      |                              +-------> N sourcing_case_lines (조달 대상 정의, g_sn 또는 자유텍스트)
-                      |                                                  /
-(견적/발주 진행 과정)      |     +-------------------------------------------/
+                      |              |    \
+                      |              |     \
+                      |              |      +---> N order_line_overrides (주문항목의 협의/구체화/예외 범위)
+                      |              |                    \
+                      |              |                     +---> (선택 연결) sourcing_cases
+                      |              |
+                      |              +---------------------> sourcing_cases
+                      |                                     (하나의 sc는 항상 하나의 order_line에 속하고,
+                      |                                      필요 시 특정 override 1건에도 연결된다)
+                      |                                                    |
+수급 담당자 영역          |                                                    +---> 1 subtype_cases (국내/해외/자체제작 등)
+                      |                                                    |
+                      |                                                    +---> N sourcing_case_lines (해당 sc 내부 실행 분해 라인. 계약 범위를 새로 정의하지 않고, sc 범위를 더 작은 조달/작업 단위로 나눈다)
+                      |                                                                  /
+(견적/발주 진행 과정)      |     +-----------------------------------------------------------/
                       |      |
-                      |  [rfq | po]_allocations (RFQ/PO - sc_lines 매핑 테이블)
+                      |      |  [rfq | po]_allocations (RFQ/PO - sourcing_case_lines 매핑 테이블)
                       |      |
-                      |  rfqs/purchase_orders
+                      |      |  rfqs / purchase_orders
                       |      |
-                      |      +---> N rfq_lines/po_lines
-                      |              (sourcing_case_lines 참조)
+                      |      +---> N rfq_lines / po_lines
+                      |              (실행 기준은 sourcing_case_lines, 계약 측 ol/olo 표시는 sc 및 scl의 보조 FK를 통해 빠르게 연결)
 
  * ======================================================================= */
+
+-- ======================================================================
+-- TABLE: announce_links
+-- DESC : 공고와 프로젝트(계약)의 연결 테이블
+-- NOTE : projects에 announce 링크 정보를 직접 넣지 않고 별도의 테이블로 분리하여 의존성을 만들지 않도록함
+CREATE TABLE announce_links (
+  al_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'AL PK',
+  al_ba_sn BIGINT UNSIGNED NOT NULL COMMENT '공고 PK(bid_announces.ba_sn)',
+  al_p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects.p_sn)',
+  PRIMARY KEY (al_sn),
+  UNIQUE KEY uk_announce_links (al_ba_sn, al_p_sn),
+  CONSTRAINT fk_announce_links_project FOREIGN KEY (al_p_sn) REFERENCES projects (p_sn)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='입찰공고-프로젝트 연결';
 
 
 -- ======================================================================
@@ -104,7 +122,7 @@ CREATE TABLE projects (
     NOT NULL COMMENT '프로젝트 유형(ENUM) | TENDER:입찰(공공/민간), DIRECT:직접계약(수의), FRAME:기간/다건 계약(프레임/콜오프, 여러 주문서 생성)',
   p_customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객사 PK(parties)',
   p_contract_no VARCHAR(32) NULL COMMENT '계약서 번호(외부 식별자, 계약 전 NULL 가능)',
-  p_signed_at DATE NULL COMMENT '계약 체결일(계약 전 NULL 가능)',
+  p_signed_at DATE NULL COMMENT '계약 체결일/수주일 (계약 전 NULL 가능)',
   p_contract_amount DECIMAL(18,2) NULL COMMENT '계약 총액(계약 전 NULL 가능)',
   p_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
   p_status ENUM('PRE_CONTRACT','ACTIVE','CLOSED','CANCELLED')
@@ -229,8 +247,15 @@ CREATE TABLE order_line_overrides (
 /* -----------------------------------------------------------------------
  * TABLE: sourcing_cases
  * PURPOSE
- * - 주문항목(order_lines) 단위의 '수급 실행 케이스'이다.
- * - 케이스는 수급 방식(DOMESTIC/OVERSEAS/IN_HOUSE)별로 생성될 수 있으며, 기본은 1 order_line : 1+ sourcing_cases.
+ * - sourcing_case는 계약 범위를 받아 수급 도메인에서 처리하기 위한 '수급 실행 케이스'이다.
+ * - 하나의 sourcing_case는 정확히 하나의 계약 범위만 담당한다.
+ * - 계약 범위는 다음 둘 중 하나다:
+ *   1) order_line 전체
+ *   2) order_line + 특정 order_line_override 1건
+ * - 따라서 하나의 order_line에는 여러 sourcing_case가 붙을 수 있고,
+ *   필요 시 하나의 override에도 여러 sourcing_case가 붙을 수 있다.
+ *
+ * - 케이스는 수급 방식(DOMESTIC/OVERSEAS/IN_HOUSE)별로 생성될 수 있다.
  * - sc_status는 '단계 진행'이 아니라, '책임/수락/거절에 따른 지속 상태'를 표현한다.
  *   단, 서비스적인 측면에서 업무를 완료했다, 즉 더이상 다른 업무를 하지 않는다는 의미로 DONE 상태를 둔다. 이건 견적/발주와의 데이터적 무결성 완료를 보장하지는 않는다. 그러니 DONE은 서비스적으로 사람이 수동으로 선택한다.
  *
@@ -247,6 +272,11 @@ CREATE TABLE order_line_overrides (
  * - sc_requested_at    : 요청 시각
  * - sc_accepted_at     : 수락 시각
  * - sc_rejected_at     : 거절 시각
+ * - sc_ol_sn           : 이 케이스가 속한 order_line
+ * - sc_olo_sn          : 이 케이스가 order_line 전체가 아니라 특정 override 1건을 담당할 때 사용하는 선택 FK
+ *                        NULL 이면 order_line 전체를 담당하고,
+ *                        값이 있으면 해당 override 1건을 담당한다.
+ *                        단, sc_olo_sn 이 채워진 경우 그 override는 반드시 sc_ol_sn 의 자식이어야 한다(Database가 아닌 프로그램 레벨에서 검증하기).
  * - 상세 액션 이력은 audit/activity_logs로 남긴다(별도 이벤트 테이블 신설 없음).
  *
  * EXECUTION & QUANTITY INTERPRETATION
@@ -261,7 +291,8 @@ CREATE TABLE order_line_overrides (
 
 CREATE TABLE sourcing_cases (
   sc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수급 케이스 PK',
-  sc_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines) (1:1)',
+  sc_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines)',
+  sc_olo_sn BIGINT UNSIGNED NULL COMMENT '주문라인 override PK(order_line_overrides) | 이 수급 케이스가 특정 override 1건만 담당할 때 사용, NULL이면 order_line 전체 담당',
   sc_required_qty DECIMAL(14,3) NOT NULL COMMENT '요구된 수급 수량(order_line 의 수량과는 다를 수 있음)',
   sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
     NOT NULL COMMENT '수급 방식(ENUM) | DOMESTIC:국내구매, OVERSEAS:해외구매, IN_HOUSE:자체제작',
@@ -293,14 +324,17 @@ CREATE TABLE sourcing_cases (
   sc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   sc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (sc_sn),
-  UNIQUE KEY uk_sourcing_cases_ol_sn (sc_ol_sn),
+  KEY idx_sourcing_cases_ol_sn (sc_ol_sn),
+  KEY idx_sourcing_cases_olo_sn (sc_olo_sn),
   KEY idx_sourcing_cases_assignee (sc_assignee_a_sn),
   KEY idx_sourcing_cases_status (sc_status),
   CONSTRAINT fk_sourcing_cases_order_lines
     FOREIGN KEY (sc_ol_sn) REFERENCES order_lines(ol_sn),
+  CONSTRAINT fk_sourcing_cases_order_line_overrides
+      FOREIGN KEY (sc_olo_sn) REFERENCES order_line_overrides(olo_sn),
   CONSTRAINT fk_sourcing_cases_assignee
     FOREIGN KEY (sc_assignee_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='수급 케이스(주문라인 단위 공통 컨테이너)';
+) COMMENT='수급 케이스(정확히 하나의 계약 범위: order_line 전체 또는 특정 override 1건을 담당하는 컨테이너)';
 
 
 /* =============================================================================
@@ -312,19 +346,28 @@ CREATE TABLE sourcing_cases (
 
 [검증/정합성 규칙(앱 레벨 강제 권장)]
 - sc_lines는 반드시 sc_sn을 가진다.
-- sc_lines는 "어떤 납품 요구(order_line)를 위해 존재하는가"를 추적할 수 있어야 한다:
-  - 기본: sc_sn → order_line(간접)로 추적
-  - 필요 시: scl_ol_sn 또는 scl_olo_sn으로 명시 연결(아래 컬럼 참조)
-- 한 order_line을 여러 sourcing_case로 나눈 경우:
-  - 각 sc_lines의 목표수량 합이 order_line 목표수량을 커버(= 또는 <=)하도록 운영 정책을 둔다.
+- sourcing_case_lines는 계약 범위를 새로 정의하는 엔티티가 아니다.
+- 계약 범위의 정본은 sourcing_cases 가 가진다:
+  - sc_olo_sn IS NULL     → 해당 sc는 order_line 전체를 담당
+  - sc_olo_sn IS NOT NULL → 해당 sc는 특정 order_line_override 1건을 담당
+- 따라서 같은 sc 아래의 모든 sc_lines는 동일한 계약 범위 해석을 공유한다.
+- sc_lines 는 해당 sc 내부를 더 작은 실행 단위(부품/BOM/용역/운송/외주 등)로 분해한 것일 뿐,
+  sc 와 다른 order_line / override 범위를 독립적으로 담당하지 않는다.
+- scl_ol_sn / scl_olo_sn 은 정본 범위 정의가 아니라, 복잡한 sc → scl → RFQ/PO 구조에서도
+  서비스 화면/조회/집계에서 ol / olo 를 빠르게 연결하기 위한 보조 추적 FK이다.
+- 따라서 scl_ol_sn / scl_olo_sn 값은 반드시 상위 sc 의 계약 범위 해석과 모순되면 안 된다.
+- 한 order_line 또는 override 를 여러 sourcing_case로 나눈 경우:
+  - 각 sourcing_case 및 그 하위 sc_lines 의 목표수량 합이 최종 요구 수량을 커버(= 또는 <=)하도록 운영 정책을 둔다.
 - RFQ/PO 라인은 반드시 scl_sn을 참조한다(유추 금지).
 
-===============================================================================
 [주요 FK/참조 정책]
 - scl_sc_sn: sourcing_cases.sc_sn (필수)
-- (선택) scl_ol_sn: order_lines.ol_sn  — 라인이 특정 주문항목을 직접 커버할 때
-- (선택) scl_olo_sn: order_line_overrides.olo_sn — override 단위의 조달 대상일 때
-  ※ 운영 규칙: scl_ol_sn과 scl_olo_sn 중 하나만 채우는 것을 권장(둘 다 NULL 금지까지 강제하려면 앱 검증)
+- (선택) scl_ol_sn: order_lines.ol_sn
+  - 정본 범위 FK가 아니라 화면/조회/집계용 빠른 연결이다.
+- (선택) scl_olo_sn: order_line_overrides.olo_sn
+  - 정본 범위 FK가 아니라 화면/조회/집계용 빠른 연결이다.
+  - 특히 sc 가 특정 override 1건을 담당하는 경우, 같은 sc 아래 scl 들은 필요 시 동일 override를 반복 참조할 수 있다.
+  - sc 가 order_line 전체를 담당하는 경우에도, 화면 표시/추적 편의를 위해 관련 override를 보조적으로 참조할 수 있다.
 
 - goods 참조:
   - scl_g_sn: goods.g_sn (조달 대상이 명확한 경우)
@@ -337,12 +380,10 @@ CREATE TABLE sourcing_cases (
 CREATE TABLE sourcing_case_lines (
   scl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수급라인 PK',
   scl_no INT NOT NULL COMMENT '발주서 내 줄번호',
-  -- 필수 연결: 수급 케이스
-  scl_sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급케이스 FK (sourcing_cases.sc_sn). 이 라인이 속한 수급 전략/방식 컨텍스트',
-
-  -- 선택 연결: 계약/납품 레이어 추적 (권장: 둘 중 하나만 사용)
-  scl_ol_sn BIGINT UNSIGNED NULL COMMENT '주문항목 FK (order_lines.ol_sn). 이 라인이 특정 주문항목을 직접 커버할 때 사용(권장)',
-  scl_olo_sn BIGINT UNSIGNED NULL COMMENT '주문항목 override FK (order_line_overrides.olo_sn). override 단위(구성품/대체품) 조달 대상일 때 사용(권장)',
+  scl_sc_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 FK (sourcing_cases.sc_sn)',
+  -- 계약 정보와의 빠른 연결용 FK들(서비스/조회 편의용, 정본 범위 정의 아님)
+  scl_ol_sn BIGINT UNSIGNED NULL COMMENT '주문항목 FK (order_lines.ol_sn). 정본 범위 FK가 아니라 화면/조회/집계용 빠른 연결이다. 상위 sc의 계약 범위와 모순되면 안 된다.',
+  scl_olo_sn BIGINT UNSIGNED NULL COMMENT '주문항목 override FK (order_line_overrides.olo_sn). 정본 범위 FK가 아니라 화면/조회/집계용 빠른 연결이다. 상위 sc가 특정 override를 담당하는 경우 반복 참조될 수 있다.',
 
   -- 조달 대상의 성격/목적
   scl_line_type ENUM(
@@ -681,7 +722,7 @@ CREATE TABLE rfq_allocations (
   CONSTRAINT fk_rfq_alloc_rfql FOREIGN KEY (rfql_sn) REFERENCES rfq_lines(rfql_sn),
   CONSTRAINT fk_rfq_alloc_sc   FOREIGN KEY (sc_sn)   REFERENCES sourcing_cases(sc_sn),
   CONSTRAINT fk_rfq_alloc_scl  FOREIGN KEY (scl_sn)  REFERENCES sourcing_case_lines(scl_sn)
-) COMMENT='RFQ 라인 ↔ 수급 실행 라인 배분(sc/rfq 캐시 포함, 실행 기준은 scl)';
+) COMMENT='RFQ 라인 ↔ 수급 실행 라인 배분(sc/rfq 캐시 포함, 실행 기준은 scl). 계약 측 ol/olo 표시는 sc 및 scl의 보조 FK를 통해 빠르게 연결한다.';
 
 
 
@@ -826,5 +867,5 @@ CREATE TABLE po_allocations (
   CONSTRAINT fk_po_alloc_pol FOREIGN KEY (pol_sn) REFERENCES po_lines(pol_sn),
   CONSTRAINT fk_po_alloc_sc  FOREIGN KEY (sc_sn)  REFERENCES sourcing_cases(sc_sn),
   CONSTRAINT fk_po_alloc_scl FOREIGN KEY (scl_sn) REFERENCES sourcing_case_lines(scl_sn)
-) COMMENT='PO 라인 ↔ 수급 실행 라인 배분(sc/po 캐시 포함, 실행 기준은 scl)';
+) COMMENT='PO 라인 ↔ 수급 실행 라인 배분(sc/po 캐시 포함, 실행 기준은 scl). 계약 측 ol/olo 표시는 sc 및 scl의 보조 FK를 통해 빠르게 연결한다.';
 
