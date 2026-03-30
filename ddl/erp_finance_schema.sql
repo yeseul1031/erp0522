@@ -7,17 +7,15 @@
  *   기록·해석·집계하기 위한 엔티티들을 정의한다.
  * - 본 레이어는 업무 흐름을 생성하지 않으며,
  *   contracts / sourcing 레이어에서 생성된 사실(fact)을 재해석하는 역할을 한다.
+ * - 회사의 여러 사업들이 공통으로 사용하는 "회계/재무적 사실"의 정본을 관리하는 레이어이다. 그러므로, 특정 사업에 의존적이지 않고 중립적으로 설계되어야 한다.
  *
  * ----------------------------------------------------------------------------
  * [의존 관계 — 중요]
  * - 본 파일은 다음 schema들을 전제로 한다:
  *   - erp_core_schema.sql
- *     : 조직, 담당자, 거래처, 물품, 문서, 변경이력 등 공통 기준 엔티티
+ *     : 조직, 담당자, 거래처, 물품, 문서, 변경이력 등 공통 기준 엔티티. 직접 연결 가능
  *   - erp_contracts_schema.sql
- *     : 계약, 주문, 수급, RFQ, PO 등 업무 실행의 정본 엔티티
- *
- * - 본 파일에는 위 엔티티들의 정의를 포함하지 않으며,
- *   참조/연결/집계만 수행한다.
+ *     : 계약, 주문, 수급, RFQ, PO 등 업무 실행의 정본 엔티티. 직접 연결이 아닌 참조/연결/집계를 통해 간접 연결만 한다.
  *
  * ----------------------------------------------------------------------------
  * [finance 레이어의 설계 관점]
@@ -160,12 +158,11 @@ C. receipts 합계로 상태 전이
 
 -- =============================================================================
 -- TABLE: receivables
--- DESC : 수금/정산(채권) 헤더. “우리가 받아야 할 돈”의 단위. (지출의 payables와 개념적으로 대칭)
+-- DESC : 납품처 정산 엔티티, 수금/정산(채권) 헤더. “우리가 받아야 할 돈”의 단위. (지출의 payables와 개념적으로 대칭)
+-- 납품처 정산은 납품처로 구분될뿐, 조달이나 MRO에 따라 구분하기 위해서는 _links를 이용해야한다. (현재는 조달만 존재하고, 조달의 경우 주문서(order)단위로 구분하므로 receivable_order_links 로 간접 연결한다)
 -- =============================================================================
 CREATE TABLE receivables (
   recv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수금(정산/채권) PK',
-
-  recv_p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 FK (projects.p_sn). 수금은 프로젝트에 귀속됨(최상위 추적 기준)',
   recv_customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객/수금 대상 거래처 FK (parties.pt_sn). 없으면 프로젝트 기본 고객을 사용(운영 정책)',
 
   recv_type ENUM(
@@ -199,46 +196,42 @@ CREATE TABLE receivables (
 
   PRIMARY KEY (recv_sn),
 
-  KEY idx_recv_p_sn (recv_p_sn),
   KEY idx_recv_customer (recv_customer_pt_sn),
   KEY idx_recv_status (recv_status),
   KEY idx_recv_due (recv_due_dt),
 
-  CONSTRAINT fk_recv_project
-    FOREIGN KEY (recv_p_sn) REFERENCES projects(p_sn),
-
   CONSTRAINT fk_recv_customer
     FOREIGN KEY (recv_customer_pt_sn) REFERENCES parties(pt_sn)
 
-) COMMENT='수금/정산(채권) 헤더. order_lines를 묶는 단위이며, 실제 수금 이벤트는 receipts로 기록.';
+) COMMENT='수금/정산(채권) 헤더. 실제 수금 이벤트는 receipts로 기록.';
 
 
 
 -- =============================================================================
--- TABLE: receivable_order_line_links
--- DESC : receivable ↔ order_line 연결(정본). order_line은 receivable 하나에만 포함되도록 UNIQUE로 강제.
+-- TABLE: receivable_order_links
+-- DESC : receivable ↔ order 연결(정본). 1:1 연결로 order_line이 receivable 하나에만 포함되도록 UNIQUE 제약. (order_lines에 FK를 두지 않고, 링크 테이블로 연결하여 도메인 간 의존성 없게 설계)
 -- =============================================================================
-CREATE TABLE receivable_order_line_links (
-  rol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수금-주문항목 링크 PK',
+CREATE TABLE receivable_order_links (
+  rol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수금-주문서 링크 PK',
 
   rol_recv_sn BIGINT UNSIGNED NOT NULL COMMENT '수금(정산) FK (receivables.recv_sn)',
-  rol_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문항목 FK (order_lines.ol_sn). UNIQUE로 “하나의 order_line은 receivable 하나만” 강제',
+  rol_o_sn BIGINT UNSIGNED NOT NULL COMMENT '주문서 FK (orders.o_sn)',
 
   rol_create_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
   rol_update_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
 
   PRIMARY KEY (rol_sn),
 
-  UNIQUE KEY uq_rol_ol_sn (rol_ol_sn),          -- 핵심 제약: order_line은 receivable 하나만
-  KEY idx_rol_recv_sn (rol_recv_sn),
+  UNIQUE KEY uq_rol_recv_sn (rol_recv_sn),          -- 핵심 제약: 수금 청구서 1개당 주문서 1개 강제
+  UNIQUE KEY uq_rol_o_sn (rol_o_sn),          -- 핵심 제약: 수금 청구서 1개당 주문서 1개 강제
 
   CONSTRAINT fk_rol_recv
     FOREIGN KEY (rol_recv_sn) REFERENCES receivables(recv_sn),
 
-  CONSTRAINT fk_rol_ol
-    FOREIGN KEY (rol_ol_sn) REFERENCES order_lines(ol_sn)
+  CONSTRAINT fk_rol_o
+    FOREIGN KEY (rol_o_sn) REFERENCES orders(o_sn)
 
-) COMMENT='수금(정산)과 주문항목 연결(정본). order_line은 receivable 하나에만 포함되도록 UNIQUE 강제.';
+) COMMENT='수금(정산)과 주문서 연결(정본). receivable:order는 1:1이다';
 
 
 

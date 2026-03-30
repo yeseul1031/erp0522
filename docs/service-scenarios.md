@@ -8,8 +8,8 @@
 ## 0. 공통 전제(예시 적용 기준)
 
 ### 0-1. 99% 경로 / 희소 케이스(override)
-- 99%: 계약상 `order_lines` 1건에 대해 `sourcing_cases` 1건, `sourcing_case_lines` 1건으로 이어지고, RFQ/PO 라인은 그 실행 라인을 참조해 생성한다.
-- 희소: `order_line_overrides(olo_type in {SPLIT,SUBSTITUTE,ADD_ON,BUNDLE})`가 있으면, sourcing_case가 order_line 전체 또는 특정 override 1건을 담당하도록 만들고, 그 아래 execution 라인(scl)으로 RFQ/PO를 생성한다.
+- 99%: `order_lines.ol_default_g_sn`로 기본 goods를 지정하고, RFQ/PO 라인은 기본 goods로 생성한다.
+- 희소: `order_line_overrides(override_type in {SPLIT,SUBSTITUTE,ADD_ON,BUNDLE})`가 있으면 전개 결과로 RFQ/PO 라인을 만든다.
 - `BUNDLE` 사용 기준(운영 규칙):
   - 고객 계약이 “구체 구성품/모델/브랜드”를 명시하거나, 납품 전 고객에게 구성 확정(고지/승인)이 필요한 경우에만 `order_line_overrides(override_type='BUNDLE')`로 구성품을 기록한다.
   - 고객 요구가 기능/성능 요구에 그치고(예: “전화가 되는 노트북”), 구성품은 내부 판단으로 충족하면 되는 경우에는 OLO(BUNDLE)를 만들지 않는다. 이때 구성품 수급/조립은 SC 이하(SCL, RFQ/PO 라인)에서만 전개한다.
@@ -49,35 +49,34 @@
 - (p_sn=100) 프로젝트/계약
 
 3) `order_lines`
-- (ol_sn=1001) ol_p_sn=100, ol_no=1, final_item_name='드라이버', final_item_qty=10, final_item_unit='EA'
+- (ol_sn=1001) p_sn=100, line_no=1, requirement_name='드라이버', qty_required=10, **ol_default_g_sn=2001**
 
 4) `sourcing_cases`
-- (sc_sn=9001) sc_ol_sn=1001, sc_olo_sn=NULL, sc_type='DOMESTIC', sc_required_qty=10, sc_status='OPEN'
+- (sc_sn=9001) ol_sn=1001, sourcing_type='DOMESTIC', sc_status='OPEN'
 
 5) `parties` (견적/발주 대상 업체)
 - (pt_sn=3001) A업체
 - (pt_sn=3002) B업체
 
 6) RFQ 생성
-- `sourcing_case_lines`
-  - (scl_sn=9501) scl_sc_sn=9001, scl_no=1, scl_ol_sn=1001, scl_olo_sn=NULL, scl_line_type='FINISHED_GOOD', scl_purpose_code='FULFILL_ORDER_LINE', scl_status='CONFIRMED', scl_g_sn=2001, scl_item_qty=10
 - `rfqs`
-  - (rfq_sn=4001) rfq_primary_sc_sn=9001, rfq_pt_sn=3001, rfq_status='SENT'
-  - (rfq_sn=4002) rfq_primary_sc_sn=9001, rfq_pt_sn=3002, rfq_status='SENT'
+  - (rfq_sn=4001) vendor_pt_sn=3001, sourcing_type='DOMESTIC', rfq_status='SENT'
+  - (rfq_sn=4002) vendor_pt_sn=3002, sourcing_type='DOMESTIC', rfq_status='SENT'
 - `rfq_lines`
-  - (rfql_sn=4101) rfql_rfq_sn=4001, rfql_no=1, rfql_req_name='십자 드라이버 6인치', rfql_req_qty=10
-  - (rfql_sn=4201) rfql_rfq_sn=4002, rfql_no=1, rfql_req_name='십자 드라이버 6인치', rfql_req_qty=10
+  - (rfql_sn=4101) rfq_sn=4001, line_no=1, g_sn=2001, request_qty=10
+  - (rfql_sn=4201) rfq_sn=4002, line_no=1, g_sn=2001, request_qty=10
 - `rfq_allocations`
-  - (rfqa_sn=4111) rfq_sn=4001, rfql_sn=4101, sc_sn=9001, scl_sn=9501, rfqa_qty=10
-  - (rfqa_sn=4211) rfq_sn=4002, rfql_sn=4201, sc_sn=9001, scl_sn=9501, rfqa_qty=10
+  - (rfqa_sn=4111) rfql_sn=4101, sc_sn=9001, olo_sn=NULL, allocated_qty=10
+  - (rfqa_sn=4211) rfql_sn=4201, sc_sn=9001, olo_sn=NULL, allocated_qty=10
 
 7) 업체 선정 후 PO 생성
 - `purchase_orders`
-  - (po_sn=5001) po_primary_sc_sn=9001, po_vendor_pt_sn=3002, po_status='SENT'
+  - (po_sn=5001) vendor_pt_sn=3002, sourcing_type='DOMESTIC', po_status='SENT', po_kind='NORMAL'
 - `po_lines`
-  - (pol_sn=5101) pol_po_sn=5001, pol_no=1, pol_qty=10, pol_unit_cost=..., pol_ccy='KRW'
+  - (pol_sn=5101) po_sn=5001, line_no=1, g_sn=2001, po_qty=10, unit_price=..., ccy='KRW'
+  - (선택) source_rfq_line: pol이 어떤 rfql에서 왔는지 추적 컬럼이 있으면 함께 채움(정책/DDL에 따름)
 - `po_allocations`
-  - (poa_sn=5111) po_sn=5001, pol_sn=5101, sc_sn=9001, scl_sn=9501, poa_qty=10
+  - (poa_sn=5111) pol_sn=5101, sc_sn=9001, olo_sn=NULL, allocated_qty=10
 
 #### 조회/검증 포인트
 - “주문라인(ol_sn=1001)의 견적 비교”
@@ -95,33 +94,29 @@
 
 #### 입력
 1) `order_lines`
-- (ol_sn=1101) final_item_name='드라이버(후보 비교)', final_item_qty=10, final_item_unit='EA'
+- (ol_sn=1101) requirement_name='드라이버(후보 비교)', qty_required=10
   - 후보군이므로 **ol_default_g_sn = NULL 허용(정책 선택)**
 
 2) 후보 goods를 `order_line_overrides`로 기록
-- (olo_sn=3101) olo_ol_sn=1101, olo_type='SUBSTITUTE', olo_item_name='후보A', olo_item_qty=10, olo_note='후보A'
-- (olo_sn=3102) olo_ol_sn=1101, olo_type='SUBSTITUTE', olo_item_name='후보B', olo_item_qty=10, olo_note='후보B'
+- (olo_sn=3101) ol_sn=1101, override_type='SUBSTITUTE', g_sn=2001, qty=10, note='후보A'
+- (olo_sn=3102) ol_sn=1101, override_type='SUBSTITUTE', g_sn=2002, qty=10, note='후보B'
 
 3) `sourcing_cases`
-- 후보별 비교를 같은 sc 안의 서로 다른 olo로 분기하지 않는다.
-- 각 후보 override를 독립 수급 범위로 볼 경우 sc를 후보별로 분리한다.
-- 예:
-  - (sc_sn=9101) sc_ol_sn=1101, sc_olo_sn=3101, sc_type='DOMESTIC', sc_status='OPEN'
-  - (sc_sn=9102) sc_ol_sn=1101, sc_olo_sn=3102, sc_type='DOMESTIC', sc_status='OPEN'
+- (sc_sn=9101) ol_sn=1101, sourcing_type='DOMESTIC', sc_status='OPEN'
 
 4) RFQ 라인 작성 원칙
 - RFQ 라인은 goods 기준으로 만든다(후보별 1줄).
-- 후보군 구분의 정본 범위는 `sourcing_cases.sc_olo_sn` 이다.
-- `scl_olo_sn`은 화면/조회에서 후보 override를 빠르게 함께 보여주기 위한 보조 연결로 반복 참조할 수 있다.
-- 
+- `rfq_allocations.olo_sn`로 후보군을 표시한다.
+  - g_sn=2001 라인 → olo_sn=3101
+  - g_sn=2002 라인 → olo_sn=3102
+
 (2개 업체에 2개 후보를 모두 요청하는 예)
-- `rfqs`: (rfq_sn=4011, rfq_pt_sn=3001), (rfq_sn=4012, rfq_pt_sn=3002)
+- `rfqs`: (rfq_sn=4011 vendor_pt_sn=3001), (rfq_sn=4012 vendor_pt_sn=3002)
 - `rfq_lines`: 후보 2개 × 업체 2개 = 4줄
-- `rfq_allocations`: 각 rfql에 (해당 후보 sc_sn, 해당 후보 scl_sn) 배정
+- `rfq_allocations`: 각 rfql에 (sc_sn=9101, olo_sn=후보 override) 배정
 
 #### 조회(개념)
-- `rfq_lines` ↔ `rfq_allocations` ↔ `sourcing_cases` 조인 후 `sc_olo_sn` 기준으로 후보별 가격 비교
-- 화면 표시에서는 필요 시 `sourcing_case_lines.scl_olo_sn`을 함께 사용해 override명을 빠르게 노출한다.
+- `rfq_lines` ↔ `rfq_allocations` 조인 후 `olo_sn`별 그룹으로 후보별 가격 비교
 
 ---
 
@@ -138,23 +133,18 @@
 - (g_sn=9002) goods_name='동급 PH2 드라이버', model_no='PH2-ALT'
 
 `order_lines`
-- (ol_sn=1001) final_item_name='강철 십자드라이버 PH2', final_item_qty=100
+- (ol_sn=1001) qty_required=100, ol_default_g_sn=9001
 
 `order_line_overrides`
-- (olo_sn=2001) olo_ol_sn=1001, olo_type='SPLIT', olo_item_name='강철 십자드라이버 PH2', olo_item_qty=60, olo_note='재고 60 한도'
-- (olo_sn=2002) olo_ol_sn=1001, olo_type='SUBSTITUTE', olo_item_name='동급 PH2 드라이버', olo_item_qty=40, olo_note='대체품 구매'
+- (olo_sn=2001) override_type='SPLIT', g_sn=9001, qty=60, note='재고 60 한도'
+- (olo_sn=2002) override_type='SUBSTITUTE', g_sn=9002, qty=40, note='대체품 구매'
 
 `sourcing_cases`
-- 분할/대체를 서로 다른 계약 범위로 처리하려면 sc도 나눈다.
-- 예:
-  - (sc_sn=9001) sc_ol_sn=1001, sc_olo_sn=2001, sc_type='DOMESTIC', sc_required_qty=60
-  - (sc_sn=9002) sc_ol_sn=1001, sc_olo_sn=2002, sc_type='DOMESTIC', sc_required_qty=40
-
+- (sc_sn=9001) ol_sn=1001, sourcing_type='DOMESTIC'
 
 #### RFQ/PO 생성 규칙
-- RFQ/PO 라인은 각 sc 아래의 sourcing_case_lines를 기준으로 생성한다.
-- 분할/대체 구분의 정본은 `sc_olo_sn`이며,
-  `scl_olo_sn`은 화면/조회에서 ol/olo를 빠르게 함께 보여주기 위한 보조 연결이다.
+- override가 있으면 RFQ/PO 라인은 override 전개 결과(2줄)로 생성된다.
+- 내부 귀속은 동일 sc_sn으로 연결하되, `*_allocations.olo_sn`으로 구분한다.
 
 ---
 
@@ -166,26 +156,24 @@
 
 #### 입력
 `order_lines`
-- (ol_sn=1201) final_item_name='PC 세트', final_item_qty=10, final_item_unit='SET'
+- (ol_sn=1201) qty_required=10, requirement_name='PC 세트'
+  - (선택) 세트 goods가 없으면 ol_default_g_sn은 NULL 가능
 
 `order_line_overrides` (구성품)
-- (olo_sn=3201) olo_ol_sn=1201, olo_type='BUNDLE', olo_item_name='본체', olo_item_qty=10, olo_note='본체'
-- (olo_sn=3202) olo_ol_sn=1201, olo_type='BUNDLE', olo_item_name='모니터', olo_item_qty=10, olo_note='모니터'
+- (olo_sn=3201) override_type='BUNDLE', g_sn=2101, qty=10, note='본체'
+- (olo_sn=3202) override_type='BUNDLE', g_sn=2102, qty=10, note='모니터'
 
 `sourcing_cases`
-- 구성품별로 담당 범위를 분리하려면 sc도 override별로 나눈다.
-- 예:
-  - (sc_sn=9201) sc_ol_sn=1201, sc_olo_sn=3201, sc_type='DOMESTIC', sc_status='OPEN'
-  - (sc_sn=9202) sc_ol_sn=1201, sc_olo_sn=3202, sc_type='DOMESTIC', sc_status='OPEN'
+- (sc_sn=9201) ol_sn=1201, sourcing_type='DOMESTIC', sc_status='OPEN'
 
 #### RFQ/PO 작성 원칙
-- RFQ/PO 라인은 각 sc 아래의 구성품별 sourcing_case_lines를 기준으로 생성한다.
-- 본체/모니터 구분의 정본은 `sourcing_cases.sc_olo_sn` 이다.
-- `scl_olo_sn`은 화면/조회/집계에서 본체/모니터를 빠르게 함께 보여주기 위한 보조 연결이다.
+- RFQ/PO 라인은 구성품 기준으로 생성(2줄)
+- allocations에서 `olo_sn`을 사용해 본체/모니터를 분리하여
+  가격 비교/원가 산출이 가능하게 한다.
 
 #### 부대 비용 귀속 예(모니터 검사비)
 - `costs`: (ct_sn=7301) cost_type='SERVICE', amount=120,000, ccy='KRW', description='모니터 품질검사서 발급'
-- `cost_allocations`: (ca_sn=...) ct_sn=7301, sc_sn=9202, olo_sn=3202, allocated_amount=120,000, note='모니터 검사비'
+- `cost_allocations`: (ca_sn=...) ct_sn=7301, sc_sn=9201, olo_sn=3202, allocated_amount=120,000, note='모니터 검사비'
 
 ---
 
@@ -196,18 +184,18 @@
 - (g_sn=9101) manufacturer_name='Shenzhen ABC', goods_name='Sensor Module X v2', model_no='SMX-V2'
 
 `order_lines` / `sourcing_cases`
-- (ol_sn=1002) final_item_name='Sensor Module X v2', final_item_qty=100
-- (sc_sn=5002) sc_ol_sn=1002, sc_olo_sn=NULL, sc_type='OVERSEAS', sc_status='OPEN'
+- (ol_sn=1002) qty_required=100, ol_default_g_sn=9101
+- (sc_sn=5002) sourcing_type='OVERSEAS', sc_status='OPEN'
 
 1) 샘플 PO
-- `purchase_orders`: (po_sn=9002) po_primary_sc_sn=5002, po_vendor_pt_sn=401, po_status='SENT'
-- `po_lines`: (pol_sn=9102) pol_qty=2, pol_ccy='USD', pol_is_sample=1, pol_sample_disposition='DISCARD'
-- `po_allocations`: (poa_sn=...) po_sn=9002, sc_sn=5002, scl_sn=..., poa_qty=2
+- `purchase_orders`: (po_sn=9002) vendor_pt_sn=401, sourcing_type='OVERSEAS', po_kind='SAMPLE', po_status='SENT'
+- `po_lines`: (pol_sn=9102) po_qty=2, ccy='USD', is_sample=1, sample_disposition='DISCARD'
+- `po_allocations`: (poa_sn=...) sc_sn=5002, allocated_qty=2
 
 2) 본발주 PO
-- `purchase_orders`: (po_sn=9003) po_primary_sc_sn=5002, po_vendor_pt_sn=401, po_status='SENT'
-- `po_lines`: (pol_sn=9103) pol_qty=100, pol_ccy='USD', pol_is_sample=0
-- `po_allocations`: (poa_sn=...) po_sn=9003, sc_sn=5002, scl_sn=..., poa_qty=100
+- `purchase_orders`: (po_sn=9003) po_kind='NORMAL'
+- `po_lines`: (pol_sn=9103) po_qty=100, ccy='USD', is_sample=0
+- `po_allocations`: (poa_sn=...) allocated_qty=100
 
 3) 해외 비용(USD) + 환율 고정(감사 재현)
 - `costs`: (ct_sn=8101) cost_type='CUSTOMS', amount=300, ccy='USD', occurred_at='2026-01-18', description='통관비(USD)'
@@ -235,15 +223,15 @@
 1) `order_lines`: ol_sn=20, qty=100
 
 2) `sourcing_cases` 2개 생성
-- 국내: sc_sn=201, sc_ol_sn=20, sc_olo_sn=NULL, sc_type='DOMESTIC', sc_required_qty=60
-- 해외: sc_sn=202, sc_ol_sn=20, sc_olo_sn=NULL, sc_type='OVERSEAS', sc_required_qty=40
+- 국내: sc_sn=201, sourcing_type='DOMESTIC'
+- 해외: sc_sn=202, sourcing_type='OVERSEAS'
 
 3) (레거시/구조 선택) 해외 단계가 있으면 steps 엔티티로 진행 상태 기록
 - 예: `overseas_steps`(step_type='SHIPPING', status='IN_PROGRESS')
 
 4) 각 수급 케이스별 PO 생성 및 allocation
-- 국내 PO: poa_qty=60, 해당 scl_sn → sc_sn=201로 allocation
-- 해외 PO: poa_qty=40, 해당 scl_sn → sc_sn=202로 allocation
+- 국내 PO: po_qty=60 → sc_sn=201로 allocation
+- 해외 PO: po_qty=40 → sc_sn=202로 allocation
 
 #### 요약 검증
 - 각 케이스는 독립 발주/비용 흐름을 가진다.
@@ -465,118 +453,7 @@ POSTED 된 재고 작업의 결과가 잔고에 반영된다.
 
 ---
 
-### 3.5 SPLIT / MERGE (조립/분해 목적이 아닌, 반출/통합 목적의 IU 재구성)
-
-본 절은 ASSEMBLY/DISASSEMBLY가 아닌, **동일 goods 내에서** IU를 나누거나 합치는 케이스를 다룬다.
-
-- SPLIT: “일부만 반출(피킹)하려고” 기존 IU를 2개 이상의 IU로 나누는 작업
-- MERGE: “동일 goods의 여러 IU를 통합/재포장”하려고 하나의 IU로 합치는 작업
-
-공통 원칙:
-- goods(품목) 자체는 변하지 않는다. (항상 동일 g_sn)
-- 총 수량(Σ iu_qty)은 변하지 않는다. (OUT 합 = IN 합)
-- 원인/이력의 정본은 inventory_operations(IO) + inventory_operation_lines(IOL) 이다.
-- IU 분할 계보 추적은 `iu_parent_iu_sn`(선택)을 사용한다.
-
----
-
-#### 3.5.1 SPLIT 예시: BOX(100)에서 EA(1)만 반출하려고 분할
-
-전제:
-- 동일 goods(십자드라이버)가 BOX 1개(IU 1행, qty=100)로 창고에 보관 중이다.
-
-**(A) SPLIT 전: inventory_units**
-
-| iu_sn | iu_barcode | iu_g_sn | iu_qty | iu_pack_type | iu_status | iu_location_type | iu_warehouse_code | iu_location_ref |
-|---:|---|---:|---:|---|---|---|---|---|
-| 8001 | DRV-BOX-001 | 3001 | 100 | BOX | ACTIVE | WAREHOUSE | WH1 | 14-3 |
-
----
-
-**(B) 작업 생성: inventory_operations (SPLIT 1건)**
-
-| io_sn | io_type | io_status | io_occurred_at | io_note |
-|---:|---|---|---|---|
-| 9601 | SPLIT | POSTED | 2026-03-05 15:00 | BOX(100) → BOX(99) + EA(1) for issue |
-
----
-
-**(C) SPLIT 실행 결과: inventory_units 변화**
-- 원 BOX IU(8001)의 수량이 100 → 99로 감소한다.
-- 분할된 EA IU(8002, qty=1)를 새로 생성한다.
-- 이 단계에서는 반출(ISSUE)을 아직 하지 않았으므로, 새 EA IU(8002)는 ACTIVE로 둔다.
-- 분할 계보 추적을 위해, EA IU(8002).iu_parent_iu_sn = 8001 을 설정한다(선택).
-
-| iu_sn | iu_barcode | iu_g_sn | iu_qty | iu_pack_type | iu_status | iu_location_type | iu_parent_iu_sn | 비고 |
-|---:|---|---:|---:|---|---|---|---:|---|
-| 8001 | DRV-BOX-001 | 3001 | 99 | BOX | ACTIVE | WAREHOUSE | NULL | 박스 잔량(100→99) |
-| 8002 | DRV-EA-001  | 3001 | 1  | EA  | ACTIVE | WAREHOUSE | 8001 | 반출용 EA(분할 생성) |
-
----
-
-**(D) 원장 라인: inventory_operation_lines**
-- SPLIT은 총수량 변화가 0이므로, 원장 라인은 OUT과 IN을 “같은 수량”으로 기록한다.
-- 의미: "기존 IU 형태를 OUT으로 종료시키는 게 아니라, 동일 goods 내에서 취급 단위를 재구성한 것"을 원장으로 남김.
-- (운영 선택) SPLIT 시 IOL을 goods 기준으로만 남기고, IU는 별도로 관리할 수도 있으나,
-  본 예시는 “무슨 일이 있었는지”를 명확히 하기 위해 IU까지 연결한다.
-
-| iol_sn | iol_io_sn | iol_direction | iol_g_sn | iol_qty | iol_iu_sn | iol_note |
-|---:|---:|---|---:|---:|---:|---|
-| 96101 | 9601 | OUT | 3001 | 1 | 8001 | split: reduce BOX by 1 (100→99) |
-| 96102 | 9601 | IN  | 3001 | 1 | 8002 | split: create EA 1 |
-
-> 참고: 이후 실제 반출은 별도의 ISSUE 작업(IO.type=ISSUE)로 수행한다.  
-> 즉, SPLIT은 “반출을 쉽게 하기 위한 재구성”이고, 반출 그 자체는 ISSUE이다.
-
----
-
-#### 3.5.2 MERGE 예시: BOX(100) + BOX(100) → PALLET(200)로 통합(재포장)
-
-전제:
-- 동일 goods(십자드라이버) 박스 2개가 각각 IU로 존재한다.
-
-**(A) MERGE 전: inventory_units**
-
-| iu_sn | iu_barcode | iu_g_sn | iu_qty | iu_pack_type | iu_status | iu_location_type | iu_warehouse_code | iu_location_ref |
-|---:|---|---:|---:|---|---|---|---|---|
-| 8101 | DRV-BOX-010 | 3001 | 100 | BOX | ACTIVE | WAREHOUSE | WH1 | 14-3 |
-| 8102 | DRV-BOX-011 | 3001 | 100 | BOX | ACTIVE | WAREHOUSE | WH1 | 14-3 |
-
----
-
-**(B) 작업 생성: inventory_operations (MERGE 1건)**
-
-| io_sn | io_type | io_status | io_occurred_at | io_note |
-|---:|---|---|---|---|
-| 9701 | MERGE | POSTED | 2026-03-05 16:00 | BOX(100)+BOX(100) → PALLET(200) |
-
----
-
-**(C) MERGE 실행 결과: inventory_units 변화**
-- 결과 IU(팔레트) 1개를 새로 생성한다: PALLET IU(8201, qty=200, ACTIVE).
-- 원본 박스 IU(8101, 8102)는 더 이상 독립 취급 단위로 쓰지 않으므로, `iu_status=CONSUMED`로 종료한다.
-  (주의: 여기서 CONSUMED는 "조립 투입"뿐 아니라 "기존 취급 단위 종료(재포장/통합)" 의미로도 사용된다.)
-- 총수량은 동일(200)하므로 재고 잔고(goods.g_stock)는 변화가 없다.
-
-| iu_sn | iu_barcode | iu_g_sn | iu_qty | iu_pack_type | iu_status | iu_location_type | 비고 |
-|---:|---|---:|---:|---|---|---|---|
-| 8101 | DRV-BOX-010 | 3001 | 100 | BOX    | CONSUMED | WAREHOUSE | 병합 소스(종료) |
-| 8102 | DRV-BOX-011 | 3001 | 100 | BOX    | CONSUMED | WAREHOUSE | 병합 소스(종료) |
-| 8201 | DRV-PAL-001 | 3001 | 200 | PALLET | ACTIVE   | WAREHOUSE | 병합 결과(신규 IU) |
-
----
-
-**(D) 원장 라인: inventory_operation_lines**
-- MERGE도 총수량 변화가 0이므로, OUT 합(200)과 IN 합(200)이 일치하도록 기록한다.
-
-| iol_sn | iol_io_sn | iol_direction | iol_g_sn | iol_qty | iol_iu_sn | iol_note |
-|---:|---:|---|---:|---:|---:|---|
-| 97101 | 9701 | OUT | 3001 | 100 | 8101 | merge-source BOX#8101 |
-| 97102 | 9701 | OUT | 3001 | 100 | 8102 | merge-source BOX#8102 |
-| 97103 | 9701 | IN  | 3001 | 200 | 8201 | merge-result PALLET#8201 |
-
-
----
+## 4. 감사/정산 최소 증빙 세트(운영 체크)
 
 ## 7. 감사/정산 관점 최소 요구 증빙(필수 문서 세트)
 

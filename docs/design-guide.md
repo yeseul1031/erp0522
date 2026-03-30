@@ -95,12 +95,10 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 
 ### 4.1 99% 경로 vs 1% 희소 케이스
 #### 99% 경로(운영 편의성 우선)
-대부분은 **주문라인 1개 = 수급 케이스 1개 = 실행 라인 1개**로 끝난다.  
-즉 계약상 요구(`order_lines`)와 수급 실행(`sourcing_cases` / `sourcing_case_lines`)이 거의 1:1로 대응된다.
+대부분은 **주문라인 1개 = 실제 구매/납품 상품(goods) 1개**다.  
+그래서 `order_lines.ol_default_g_sn`(기본 goods FK)을 제공한다.
 
-- override가 없다면 보통 `sourcing_cases` 1건을 만들고,
-  그 아래 `sourcing_case_lines` 1건으로 RFQ/PO 실행 기준을 잡는다.
-- RFQ/PO 라인은 항상 `sourcing_case_lines`를 참조하며, 계약 측 요구는 `ol / olo` 참조로 화면에 함께 표시한다.
+- override가 없다면 `ol_default_g_sn`을 사용해 RFQ/PO 라인을 자동 생성할 수 있다.
 
 #### 1% 희소 케이스: Override 패턴(`order_line_overrides`)
 전체 스키마를 복잡하게 만들지 않기 위해 희소 케이스는 `order_line_overrides`로만 수용한다.
@@ -111,8 +109,8 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 - `BUNDLE` : 조합 납품(PC 등) 구성품 구매 단위
 
 **문서 생성 규칙(정본)**  
-override가 있다고 해서 RFQ/PO 라인이 자동으로 override 전개 결과를 그대로 따르는 것은 아니다.  
-정본 실행 기준은 항상 `sourcing_case_lines`이며, override는 계약 범위를 고정/구체화할 때만 사용한다.
+override가 있으면 override 전개 결과를 우선하여 RFQ/PO 라인을 만든다.  
+override가 없으면 default goods를 사용한다.
 
 #### 4.1.1 `BUNDLE`(OLO)는 “BOM 정본”이 아니라 “계약 고정/고지 스냅샷(선택)”이다
 - `order_line_overrides(override_type='BUNDLE')`는 **조합 납품의 구성품을 계약/대외 커뮤니케이션 수준에서 고정하거나, 고객이 구성품/모델/브랜드를 계약에 명시한 경우**에만 사용한다.
@@ -120,15 +118,10 @@ override가 있다고 해서 RFQ/PO 라인이 자동으로 override 전개 결�
 - 동일한 의미(구성품 전개)를 OLO와 SC 이하에 **혼용(사람마다 임의 선택)하지 않는다**.
   - 원칙: “계약에 고정된 것 = OLO(선택)”, “내부 수급/조립 전개 = SC 이하”
 
-### 4.2 Sourcing Case는 “발주 단위”가 아니라 “계약 범위를 담당하는 수급 전략/관리 단위”
+### 4.2 Sourcing Case는 “발주 단위”가 아니라 “수급 전략/관리 단위”
 - `sourcing_cases`는 수급 전략(국내/해외/제작) 및 진행 상태를 담는 관리 단위다.
-- 하나의 `sourcing_case`는 정확히 하나의 계약 범위만 담당한다.
-  - `order_line` 전체
-  - 또는 `order_line + 특정 override 1건`
 - 실제 구매 실행은 `purchase_orders`에서 이루어진다.
 - 하나의 `sourcing_case`에 여러 PO가 연결될 수 있다(분할 발주 가능).
-- `sourcing_case_lines`는 해당 `sourcing_case` 내부를 더 잘게 나눈 실행 라인이며,
-  계약 범위를 새로 정의하지 않는다.
 
 #### 다중 발주 검증 규칙(운영/리포트 레벨)
 하나의 `sourcing_case`에 속한 모든 `po_lines.qty` 합은,
@@ -138,15 +131,11 @@ override가 있다고 해서 RFQ/PO 라인이 자동으로 override 전개 결�
 
 이 규칙은 DB 제약으로 강제하지 않고, 운영 검증/리포트로 점검한다.
 
-### 4.3 후보군 비교의 기준은 goods가 아니라 `order_line` / `override` / `sourcing_case`
-드라이버/CPU/모니터 등 후보 비교는 “같은 계약 요구 범위” 또는 “같은 수급 케이스” 단위로 묶인다.
+### 4.3 후보군 비교의 “그룹 키”는 goods가 아니라 `order_line`/`sc_sn`
+드라이버/CPU/모니터 등 후보 비교는 “같은 요구(주문라인) 또는 같은 수급 케이스” 단위로 묶인다.
 
-- `sourcing_case`가 `order_line` 전체를 담당할 수도 있고,
-  특정 `override` 1건을 담당할 수도 있다.
-- `sourcing_case_lines.scl_ol_sn`, `sourcing_case_lines.scl_olo_sn`은
-  복잡한 sc → scl → RFQ/PO 구조에서도 화면/조회/집계에서 ol / olo 를 빠르게 함께 보여주기 위한 보조 연결이다.
-- 즉 `ol / olo`가 계약 범위의 정본이고,
-  `sc / scl`은 그 범위를 수급 도메인에서 실행하기 위한 레이어다.
+- BUNDLE(PC)처럼 한 `sc_sn` 안에 구성품이 섞일 수 있다.
+- 그래서 allocation에서 `olo_sn`을 사용하여 구성품/후보군/분할을 명시할 수 있어야 한다.
 
 ### 4.4 RFQ/PO는 “진실의 원천(Source of Truth)”
 실제로 업체에 전달한 RFQ/PO 문서와 라인 정보가 구매/정산/증빙의 기준이다.
@@ -159,7 +148,7 @@ override가 있다고 해서 RFQ/PO 라인이 자동으로 override 전개 결�
 ## 5. 국내/해외/제작 도메인 분리
 
 ### 5.1 수급 방식(Sourcing Type)
-수급 방식은 `sourcing_cases.sc_type`에서 관리한다.
+수급 방식은 `sourcing_cases.sourcing_type`에서 관리한다.
 
 - `DOMESTIC` : 국내 구매(견적→발주→납품)
 - `OVERSEAS` : 해외 구매(통화/인도조건/운송/통관 등 옵션 필드/프로세스 추가)
@@ -176,8 +165,8 @@ override가 있다고 해서 RFQ/PO 라인이 자동으로 override 전개 결�
 - 해외 옵션(필요 시만): `trade_terms`, `ship_from_country`, `ship_to_country`, 라인 통화(`po_lines.ccy`) 등
 
 #### 소스 오브 트루스(중요)
-국내/해외 구분의 최종 기준은 **`sourcing_cases.sc_type`** 이다.  
-RFQ/PO 헤더에는 별도 sourcing_type 컬럼을 두지 않고, 필요 시 대표 sc 또는 allocation을 통해 해석한다.
+국내/해외 구분의 최종 기준은 **`sourcing_cases.sourcing_type`** 이다.  
+RFQ/PO 헤더의 sourcing_type은 조회/필터 편의용(선택)으로 둘 수 있다.
 
 ### 5.3 해외 비용의 환율 재현(감사 대응)
 해외 비용은 시점별 환율이 달라 감사 재현성이 중요하다.  
@@ -373,7 +362,8 @@ IU를 “항상 1개=1행”으로 강제하면 대량 부품에서 row 폭발�
 - `logistics_jobs.job_type`: `PICKUP`, `TRANSFER`, `DELIVERY`, `MIXED`
 - `logistics_job_stops.stop_type`: `VENDOR`, `OFFICE`, `WAREHOUSE`, `CUSTOMER` (+ 해외 확장)
 - `shipment_milestones.milestone_type`: `CREATED`, `PICKED_UP`, `IN_TRANSIT`, `ARRIVED`, `WAREHOUSE_IN`, `DELIVERED` (+ 해외 확장)
-- `inventory_units.status`: `IN_TRANSIT`, `IN_OFFICE`, `IN_WAREHOUSE`, `RESERVED_FOR_DELIVERY`, `DELIVERED`, `DAMAGED`, `LOST`
+- `inventory_units.iu_status`: `ACTIVE`, `RESERVED`, `DELIVERED`, `DAMAGED`, `LOST`, `CONSUMED`
+
 
 ### 10.6 기타 코드들
 - `party_type`: CUSTOMER, VENDOR, FORWARDER, BROKER, OTHER
@@ -383,8 +373,8 @@ IU를 “항상 1개=1행”으로 강제하면 대량 부품에서 row 폭발�
 - `o_status`: OPEN, IN_PROGRESS, CLOSED, CANCELLED
 - `ol_status`: OPEN, IN_PROGRESS, DELIVERED, CANCELLED
 - `override_type`: SPLIT, SUBSTITUTE, ADD_ON, BUNDLE
-- `sc_type`: DOMESTIC, OVERSEAS, IN_HOUSE
-- `sc_status`: OPEN, SELF_ASSIGNED, ASSIGNING, ASSIGNEE_WORKING, CANCELLED, DONE
+- `sourcing_type`: DOMESTIC, OVERSEAS, IN_HOUSE
+- `sc_status`: OPEN, IN_PROGRESS, READY_TO_HANDOFF, HANDED_OFF, CANCELLED
 - `cost_type`: PRODUCT, MATERIAL, SHIPPING, CUSTOMS, SERVICE, OTHER
 - `pay_method`: CARD, TRANSFER, CASH
 - `pay_status`: PENDING, PAID, CANCELLED
@@ -396,8 +386,7 @@ IU를 “항상 1개=1행”으로 강제하면 대량 부품에서 row 폭발�
 - `po_kind`: NORMAL, SAMPLE
 - `po_status`: DRAFT, SENT, ACCEPTED, REJECTED, CANCELLED, CLOSED
 - `tax_type`: TAX_INCLUDED, TAX_EXCLUDED, UNKNOWN
-- `pol_is_sample`: 0, 1
-- `pol_sample_disposition`: DISCARD, KEEP_INTERNAL, INCLUDE_IN_DELIVERY
+- `sample_disposition`: DISCARD, KEEP_INTERNAL, INCLUDE_IN_DELIVERY
 
 
 ---

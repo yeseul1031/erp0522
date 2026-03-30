@@ -222,47 +222,49 @@ CREATE TABLE inventory_units (
 
   iu_status ENUM('ACTIVE','RESERVED','DELIVERED','DAMAGED','LOST','CONSUMED')
     NOT NULL DEFAULT 'ACTIVE'
-    COMMENT '실물 상태(ENUM, 상태축=state) | '
-            'ACTIVE:보유(재고 집계 대상, 위치는 iu_location_type으로 표현), '
-            'RESERVED:예약(출고/납품 예정으로 묶여있음; 보유 재고이되 다른 용도로 사용 금지), '
-            'DELIVERED:납품완료(고객 인도 완료; 보유 재고 집계 제외), '
-            'DAMAGED:파손(보유 재고 집계 제외 또는 별도 정책), '
-            'LOST:분실(보유 재고 집계 제외), '
-            'CONSUMED:소모(조립/가공 등으로 투입되어 더 이상 보유 재고로 집계되지 않음) | '
-            '주의: 위치(OFFICE/WAREHOUSE 등)는 iu_status로 표현하지 않는다. 위치는 iu_location_type이 정본',
+    COMMENT '실물 상태(ENUM, 상태축=state) |
+            ACTIVE:보유(재고 집계 대상, 위치는 iu_location_type으로 표현),
+            RESERVED:예약(출고/납품 예정으로 묶여있음; 보유 재고이되 다른 용도로 사용 금지),
+            DELIVERED:납품완료(고객 인도 완료; 보유 재고 집계 제외),
+            DAMAGED:파손(보유 재고 집계 제외 또는 별도 정책),
+            LOST:분실(보유 재고 집계 제외),
+            CONSUMED:소모(조립/가공 등으로 투입되어 더 이상 보유 재고로 집계되지 않음) |
+            주의: 위치(OFFICE/WAREHOUSE 등)는 iu_status로 표현하지 않는다. 위치는 iu_location_type이 정본',
   iu_location_type ENUM('VENDOR','OFFICE','WAREHOUSE','CUSTOMER','CUSTOMS','PORT','AIRPORT','IN_TRANSIT')
     NOT NULL DEFAULT 'WAREHOUSE'
-    COMMENT '현재 위치 유형(ENUM, 위치축=location, 정본) | '
-            '실물의 "어디에 있는지"는 iu_location_type이 단일 정본이다. '
-            'iu_status는 상태축(state)이며 OFFICE/WAREHOUSE 같은 위치를 포함하지 않는다. '
-            'VENDOR:공급처, OFFICE:사무실, WAREHOUSE:창고, CUSTOMER:고객, '
-            '해외 확장(CUSTOMS/PORT/AIRPORT), IN_TRANSIT:이동중(위치 노드 간 이동 상태)',
+    COMMENT '현재 위치 유형(ENUM, 위치축=location, 정본) |
+            실물의 "어디에 있는지"는 iu_location_type이 단일 정본이다.
+            iu_status는 상태축(state)이며 OFFICE/WAREHOUSE 같은 위치를 포함하지 않는다.
+            VENDOR:공급처, OFFICE:사무실, WAREHOUSE:창고, CUSTOMER:고객,
+            해외 확장(CUSTOMS/PORT/AIRPORT), IN_TRANSIT:이동중(위치 노드 간 이동 상태)',
+
   iu_warehouse_code VARCHAR(30) NULL
-    COMMENT '창고 코드 | 물건이 보관된 창고 식별자 | '
-            '예: WH1, WH-SEOUL, WH-BUSAN 등 | '
-            'location_type=WAREHOUSE일 때 사용 | '
-            'OFFICE/CUSTOMER 등 다른 위치 유형일 경우 NULL 가능 | '
-            '운영 원칙: warehouse_code는 제한된 코드 목록(드롭다운)으로 관리하여 오타/중복을 방지',
+    COMMENT '창고 코드 | 물건이 보관된 창고 식별자 |
+            예: WH1, WH-SEOUL, WH-BUSAN 등 |
+            location_type=WAREHOUSE일 때 사용 |
+            OFFICE/CUSTOMER 등 다른 위치 유형일 경우 NULL 가능 |
+            운영 원칙: warehouse_code는 제한된 코드 목록(드롭다운)으로 관리하여 오타/중복을 방지',
+
   iu_location_ref VARCHAR(50) NULL
-    COMMENT '창고 내부 위치 참조 | 창고 내 실제 보관 위치(사람 기준 위치 표현) | '
-            '예: 14-3, A-02-03, Z3-R14-S03 등 | '
-            '일반적으로 zone-rack-shelf 형태를 "-"로 구분하여 사용 | '
-            '본 값은 시스템이 해석/파싱하지 않고 사람이 이해하는 위치 문자열로 저장 | '
-            '향후 WMS 확장 시 warehouse_locations 테이블로 매핑 가능',
+    COMMENT '창고 내부 위치 참조 | 창고 내 실제 보관 위치(사람 기준 위치 표현) |
+            예: 14-3, A-02-03, Z3-R14-S03 등 |
+            일반적으로 zone-rack-shelf 형태를 "-"로 구분하여 사용 |
+            본 값은 시스템이 해석/파싱하지 않고 사람이 이해하는 위치 문자열로 저장 |
+            향후 WMS 확장 시 warehouse_locations 테이블로 매핑 가능',
 
   iu_pack_type ENUM('EA','BOX','PALLET')
     NOT NULL DEFAULT 'EA'
-    COMMENT '포장 단위(ENUM) | EA:개별 단위, BOX:박스, PALLET:팔레트 | '
-            '현장 작업 이해/지시를 돕는 보조 정보이며 재고 수량 계산의 정본은 iu_qty이다. '
-            '예: CPU 100개 박스 → iu_pack_type=BOX, iu_qty=100 | '
-            '운영 원칙: 시스템 로직은 iu_qty를 기준으로 동작하고, iu_pack_type은 사람 기준 포장/취급 단위를 표현',
+    COMMENT '포장 단위(ENUM) | EA:개별 단위, BOX:박스, PALLET:팔레트 |
+            현장 작업 이해/지시를 돕는 보조 정보이며 재고 수량 계산의 정본은 iu_qty이다.
+            예: CPU 100개 박스 → iu_pack_type=BOX, iu_qty=100 |
+            운영 원칙: 시스템 로직은 iu_qty를 기준으로 동작하고, iu_pack_type은 사람 기준 포장/취급 단위를 표현',
 
   iu_parent_iu_sn BIGINT UNSIGNED NULL
-    COMMENT '상위 IU PK(분할 계보) | split으로 생성된 IU의 원본 IU를 가리킨다 | '
-            '예: 박스 IU(qty=100)에서 1개 사용 시 split IU(qty=1)가 생성되고 iu_parent_iu_sn은 원 박스 IU를 참조 | '
-            '목적: "어느 묶음/박스에서 분할된 실물인지"를 빠르게 추적하기 위한 lineage 보조 정보 | '
-            '주의: 재고 감소의 원인은 inventory_operations / inventory_operation_lines가 정본이며, '
-            '본 컬럼은 원인 기록이 아니라 분할 계보 추적을 위한 참조용이다',
+    COMMENT '상위 IU PK(분할 계보) | split으로 생성된 IU의 원본 IU를 가리킨다 |
+            예: 박스 IU(qty=100)에서 1개 사용 시 split IU(qty=1)가 생성되고 iu_parent_iu_sn은 원 박스 IU를 참조 |
+            목적: "어느 묶음/박스에서 분할된 실물인지"를 빠르게 추적하기 위한 lineage 보조 정보 |
+            주의: 재고 감소의 원인은 inventory_operations / inventory_operation_lines가 정본이며,
+            본 컬럼은 원인 기록이 아니라 분할 계보 추적을 위한 참조용이다',
 
   iu_received_at DATETIME NULL COMMENT '회사/창고에서 실물 수령 확인 시각(업무 이벤트)',
   iu_delivered_at DATETIME NULL COMMENT '납품 완료 시각(업무 이벤트)',
@@ -284,7 +286,7 @@ CREATE TABLE inventory_units (
   CONSTRAINT fk_inventory_units_g FOREIGN KEY (iu_g_sn) REFERENCES goods(g_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_inventory_units_parent FOREIGN KEY (iu_parent_iu_sn) REFERENCES inventory_units(iu_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT,
+    ON DELETE SET NULL ON UPDATE RESTRICT
 
 ) COMMENT='실물(바코드) 단위 - 회사 통제 하의 인벤토리';
 
@@ -299,18 +301,16 @@ CREATE TABLE inventory_units (
 CREATE TABLE inventory_operations
 (
     io_sn        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '재고 작업 PK | 재고 변화를 발생시키는 사건(문서) 1건',
-    io_type ENUM('RECEIPT','ISSUE','ASSEMBLY','DISASSEMBLY','SPLIT','MERGE','ADJUSTMENT','SCRAP')
-    NOT NULL COMMENT '작업 유형(ENUM) | '
-                     'RECEIPT:입고, ISSUE:출고/납품, '
-                     'ASSEMBLY:조립(부품 CONSUMED + 완제품 생성), DISASSEMBLY:분해(완제품 해체 + 부품 복귀), '
-                     'SPLIT:분할(동일 goods의 IU를 "반출/피킹/부분 사용" 목적으로 나누는 작업; 예: BOX(100) → BOX(99)+EA(1)), '
-                     'MERGE:병합(동일 goods의 IU 여러 개를 "통합/재포장" 목적으로 합치는 작업; 예: BOX(100)+BOX(100) → PALLET(200)), '
-                     'ADJUSTMENT:재고조정(실사/오류 수정/운영상 수량 보정), SCRAP:폐기(사용불가 처리)',
+    io_type      ENUM('RECEIPT','ISSUE','ASSEMBLY','DISASSEMBLY','ADJUSTMENT','SCRAP')
+        NOT NULL COMMENT '작업 유형(ENUM) |
+                     RECEIPT:입고(인수/수령 확정) / ISSUE:출고(납품/이동/반출) /
+                     ASSEMBLY:조립(부품 CONSUMED + 완제품 생성) / DISASSEMBLY:분해(완제품 해체 + 부품 복귀) /
+                     ADJUSTMENT:재고조정(실사/오류 수정) / SCRAP:폐기(사용불가 처리)',
     io_status    ENUM('DRAFT','POSTED','CANCELLED')
         NOT NULL DEFAULT 'POSTED'
-        COMMENT '작업 상태(ENUM, 처리축=status) | '
-                'DRAFT:작성중(재고 미반영) / POSTED:확정(재고 반영) / CANCELLED:취소(무효) | '
-                '주의: 실물 상태(state=iu_status)와 혼용하지 않는다. io_status는 "문서/작업 처리 상태"이다',
+        COMMENT '작업 상태(ENUM, 처리축=status) |
+                DRAFT:작성중(재고 미반영) / POSTED:확정(재고 반영) / CANCELLED:취소(무효) |
+                주의: 실물 상태(state=iu_status)와 혼용하지 않는다. io_status는 "문서/작업 처리 상태"이다',
     io_dt        DATETIME NOT NULL COMMENT '작업 기준일시 | 재고 반영 기준 시각(업무 이벤트)',
     io_a_sn      BIGINT UNSIGNED NOT NULL COMMENT '작업자 PK(assignees) | 누가 이 작업을 수행/확정했는지',
     io_note      VARCHAR(300) NULL COMMENT '작업 메모 | 비정형 사유/근거 기록',
