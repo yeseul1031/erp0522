@@ -162,6 +162,33 @@ CREATE TABLE projects (
 
 
 -- ======================================================================
+-- TABLE: announce_links
+-- DESC : 프로젝트와 공고 도메인과의 연결, 1:1
+-- NOTE : 포탈 도메인에 있는 공고, 포탈쪽에서 프로젝트 생성 요청시 포탈의 공고의 ba_sn을 가져와 심는다.
+-- 도메인 밖에 있는 데이터라 그냥 이름 안넣었다.
+-- ======================================================================
+
+create table announce_links
+(
+    al_sn         bigint unsigned auto_increment comment 'PK'
+        primary key,
+    al_p_sn       bigint unsigned                    not null comment 'project sn',
+    al_ba_sn      bigint unsigned                    not null comment 'ba_sn',
+    al_created_dt datetime default current_timestamp not null,
+    constraint announce_links_projects_p_sn_fk
+        foreign key (al_p_sn) references projects (p_sn)
+)
+    comment '프로젝트와 공고 도메인과의 연결, 1:1';
+
+create unique index announce_links_al_p_sn_al_ba_sn_uindex
+    on announce_links (al_p_sn, al_ba_sn);
+
+create unique index announce_links_al_ba_sn_uindex
+    on announce_links (al_ba_sn);
+
+
+
+-- ======================================================================
 -- TABLE: orders
 -- DESC : 주문서
 -- NOTE : 계약내 주문항목을 그룹핑 하기 위한 목적으로 존재하는 엔티티이다. 실제 납품 단위는 order_lines(+order_line_overrides)이다.
