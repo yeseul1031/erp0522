@@ -331,6 +331,10 @@ CREATE TABLE order_lines (
   final_item_unit VARCHAR(20) NULL COMMENT '(검토된) 단위(예: EA, SET)',
   final_unit_price DECIMAL(18,2) NULL COMMENT '(검토된) 판매 단가(고객에 납품 단가, 모르면 NULL)',
 
+  ol_req_dept varchar(32) default '' not null comment '요청 부서',
+  ol_order_dt date null comment '수의/연간 계약등에서 개별 주문항목의 주문/수주일이 있을경우',
+  ol_delivery_place varchar(32) null comment '개별 납품장소가 있을경우',
+
   ol_status ENUM('OPEN','IN_PROGRESS','DELIVERED','CANCELLED')
     NOT NULL COMMENT '라인 상태(ENUM) | OPEN:오픈, IN_PROGRESS:진행, DELIVERED:납품완료, CANCELLED:취소',
   ol_due_date DATE NULL COMMENT '납품 예정일(업무 이벤트)',
