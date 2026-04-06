@@ -279,13 +279,10 @@
 | 환율 | `fx_rates` | `fx` | `fx_sn` |
 | 비용 환율 적용 | `cost_fx_applications` | `cfxa` | `cfxa_sn` |
 
-| 인보이스 | `invoices` | `inv` | `inv_sn` |
-| 인보이스 라인 | `invoice_lines` | `invl` | `invl_sn` |
 
 | 거래처 수 계좌 | `bank_accounts` | `bk` | `bk_sn` |
 | 지급대상(Payable) | `payables` | `pbl` | `pbl_sn` |
 | 지급대상-비용 배정 | `payable_cost_allocations` | `pbca` | `pbca_sn` |
-| 지급대상-인보이스 배정 | `payable_invoice_allocations` | `pbia` | `pbia_sn` |
 | 지급-지급대상 배정 | `payment_payable_allocations` | `ppa` | `ppa_sn` |
 
 | 활동 로그 | `activity_logs` | `al` | `al_sn` |

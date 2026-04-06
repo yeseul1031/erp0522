@@ -8,28 +8,13 @@
 ## 0. 공통 전제(예시 적용 기준)
 
 ### 0-1. 99% 경로 / 희소 케이스(override)
-- 99%: `order_lines.ol_default_g_sn`로 기본 goods를 지정하고, RFQ/PO 라인은 기본 goods로 생성한다.
-- 희소: `order_line_overrides(override_type in {SPLIT,SUBSTITUTE,ADD_ON,BUNDLE})`가 있으면 전개 결과로 RFQ/PO 라인을 만든다.
-- `BUNDLE` 사용 기준(운영 규칙):
-  - 고객 계약이 “구체 구성품/모델/브랜드”를 명시하거나, 납품 전 고객에게 구성 확정(고지/승인)이 필요한 경우에만 `order_line_overrides(override_type='BUNDLE')`로 구성품을 기록한다.
-  - 고객 요구가 기능/성능 요구에 그치고(예: “전화가 되는 노트북”), 구성품은 내부 판단으로 충족하면 되는 경우에는 OLO(BUNDLE)를 만들지 않는다. 이때 구성품 수급/조립은 SC 이하(SCL, RFQ/PO 라인)에서만 전개한다.
-  - “누가 입력하느냐”에 따라 OLO(BUNDLE) vs SC 전개 위치가 달라지지 않도록, 위 기준을 공통 규칙으로 적용한다.
+- design-guide.md 참고
 
 ### 0-2. 재무 레이어 분리(입력 관점)
-- 비용 발생(원장): `costs`
-- 비용 귀속/안분: `cost_allocations`
-- 실제 지급: `payments`
-- 지급-비용 매핑: `payment_lines`
-- (필요 시) 지급 승인/통제: `payables` (+ 배정 테이블)
-- (필요 시) 외부 청구 문서: `invoices` / `invoice_lines`
+- design-guide.md 참고
 
 ### 0-3. 문서/증빙(정본)
-- 원본 저장: `documents`
-- 근거 연결: `document_links(target_type, target_sn)`
-
-권장 분류:
-- 거래/원가 증빙: `documents.doc_category='COST'`
-- 지급/현금흐름 증빙: `documents.doc_category='PAYMENT'`
+- design-guide.md 참고
 
 ---
 
@@ -245,40 +230,45 @@
 1) PO 생성(검토/승인 후 발행)
 2) cost 생성 + (선택) allocation
 3) payment 생성(pay_method='CARD')
-4) documents: 카드 승인 내역 첨부
-5) documents: 구매명세서(셀러별 N개 가능) 첨부
-6) (선택) 현금영수증 첨부
+4) `payment_lines`로 cost와 정산 금액 연결
+5) documents: 카드 승인 내역 첨부
+6) documents: 구매명세서(셀러별 N개 가능) 첨부
+7) (선택) 현금영수증 첨부
 - payable은 생성하지 않는다.
 
 ### 시나리오 B) PO 기반 + 계좌이체(재무 승인/집행 필요)
 1) PO 생성
 2) cost 생성
 3) payable 생성(지급요청/승인 단위)
-4) 승인 후 payment 생성(pay_method='TRANSFER')
-5) documents: 이체 영수증 첨부
-6) (권장) payment_lines로 cost와 금액 연결(분할지급 대응)
+4) `payable_cost_allocations`로 payable의 근거 cost를 연결
+5) 승인 후 payment 생성(pay_method='TRANSFER')
+6) `payment_payable_allocations`로 payable 집행 결과를 연결
+7) documents: 이체 영수증 첨부
 
 ### 시나리오 C) 비PO 비용(배송료/미팅/주유/검수 등)
 1) cost 직접 생성
 2) (선택) cost_allocations로 귀속
-3) payment 생성(CARD/TRANSFER/CASH)
-4) documents: 영수증/현금영수증 첨부
-5) 지급이 발생했다면 documents에 카드승인/이체확인 첨부
+3) CARD/CASH면 payment 생성 후 `payment_lines`로 cost와 연결
+4) TRANSFER면 payable 생성 후 `payable_cost_allocations`로 cost와 연결
+5) TRANSFER 승인 후 payment 생성 + `payment_payable_allocations` 연결
+6) documents: 영수증/현금영수증/이체확인 등 지급 증빙 첨부
 
-### 시나리오 D) Invoice 1건에 여러 PO 묶음 + PO 외 부대비용 포함
-1) invoice 생성(외부 문서 컨테이너)
-2) invoice_lines 생성(PO 연결 + 부대비용 라인 분리)
-3) cost 생성(원가/채무 인식)
-4) payable 생성(필요 시)
-5) 승인 후 payment 생성
-6) documents: 거래명세서/세금계산서 첨부
-7) documents: 이체확인/카드승인 첨부
+### 시나리오 D) 여러 cost 묶음 + PO 외 부대비용 포함 + 단일 계좌이체
+1) 여러 PO/부대비용에 대해 cost 생성(원가/채무 인식)
+2) 동일 지급처로 묶을 수 있으면 payable 1건 생성
+3) `payable_cost_allocations`로 여러 cost를 payable 1건에 배정
+4) 승인 후 payment 생성(pay_method='TRANSFER')
+5) `payment_payable_allocations`로 payable 집행 결과 연결
+6) documents: 거래명세서/세금계산서 등 근거 문서 첨부
+7) documents: 이체확인 첨부
 
-### 시나리오 E) 1 cost를 여러 번 분할 지급(선금/중도금/잔금)
+### 시나리오 E) 1 cost를 여러 번 분할 계좌이체(선금/중도금/잔금)
 1) cost 1건 생성(총액)
-2) payment 3건 생성
-3) 각 payment_lines로 동일 cost에 분할 연결
-4) 각 payment마다 documents로 지급 증빙 첨부
+2) payable 3건 생성(선금/중도금/잔금)
+3) 각 `payable_cost_allocations`로 동일 cost에 분할 금액 연결
+4) 각 payable 승인 후 payment 3건 생성
+5) 각 `payment_payable_allocations`로 집행 결과 연결
+6) 각 payment마다 documents로 지급 증빙 첨부
 
 ---
 
@@ -307,7 +297,7 @@
 - (pay_sn=9001) pay_method='CARD', pay_status='PAID', payee_pt_sn=90000001, paid_at='2026-01-15 10:01', amount=3,240,000, ccy='KRW', ref_no='CARD-APPROVAL-1234'
 
 `payment_lines`
-- (pyl_sn=...) pay_sn=9001, ct_sn=7001, paid_amount=3,240,000, note='일괄 결제'
+- (pyl_sn=...) pay_sn=9001, ct_sn=7001, pyl_paid_amount=3,240,000, note='일괄 결제'
 
 `documents`
 - 카드 승인 내역: (doc_sn=60000) doc_category='PAYMENT', doc_type='CARD_APPROVAL', issuer_name='네이버', file_name='card_approval.pdf'
@@ -334,11 +324,17 @@
 `cost_allocations`
 - (ca_sn=...) ct_sn=7101, sc_sn=9001, ol_sn=1001, olo_sn=NULL, allocated_amount=18,000, note='드라이버 납품용 퀵'
 
+`payables`
+- (pbl_sn=7201) pbl_payee_pt_sn=90000099, pbl_requested_at='2026-01-15 18:00', pbl_total_amount=18,000, pbl_ccy='KRW'
+
+`payable_cost_allocations`
+- (pbca_sn=...) pbl_sn=7201, ct_sn=7101, pbca_amount=18,000
+
 `payments`
 - (pay_sn=70002) pay_method='TRANSFER', pay_status='PAID', paid_at='2026-01-16 18:00', amount=18,000, ccy='KRW'
 
-`payment_lines`
-- (pyl_sn=...) pay_sn=70002, ct_sn=7101, paid_amount=18,000
+`payment_payable_allocations`
+- (ppa_sn=...) pay_sn=70002, pbl_sn=7201, ppa_allocated_amount=18,000
 
 (선택) `documents` + `document_links`
 - 이체 영수증: doc_category='PAYMENT', doc_type='BANK_TRANSFER_RECEIPT' → target_type='PAYMENT', target_sn=70002
@@ -362,93 +358,6 @@ C) 판매처가 납품처로 직접 배송(직송)
 
 > 각 케이스에서 “회사 실물 접촉 여부”에 따라 `inventory_units` 생성 여부를 결정하고,  
 > 납품/운송 증빙은 `documents` + `document_links`로 연결한다.
-
-### 3.4 재고 조립 예시(박스 IU qty>1 + split + CONSUMED)
-
-#### 3.4.1 전제(품목 정의): goods
-- CPU, RAM, PC(완제품) goods가 존재한다.
-- `goods.g_stock`은 항상 최신 잔고(balance)로 운영한다(재고 작업 반영으로만 변한다).
-
-| g_sn | g_name | g_stock(조립 전) |
-|---:|---|---:|
-| 1001 | CPU | 100 |
-| 1002 | RAM | 100 |
-| 2001 | PC  | 0 |
-
----
-
-#### 3.4.2 조립 전(재고 보유): inventory_units
-- 부품은 1박스=IU 1행으로 관리할 수 있다(`iu_qty > 1`).
-- 이 예시에서는 CPU 100개 박스 1개, RAM 100개 박스 1개가 이미 창고에 있다.
-- IU는 “회사 통제 하에 실물을 인수(수령)하고 바코드(관리번호)를 할당한 단위”이므로, 기본 위치는 WAREHOUSE로 둔다.
-
-| iu_sn | iu_barcode | iu_g_sn | iu_qty | iu_status | iu_location_type | 비고 |
-|---:|---|---:|---:|---|---|---|
-| 5001 | CPU-BOX-A | 1001 | 100 | ACTIVE | WAREHOUSE | CPU 박스 A(100개) |
-| 6001 | RAM-BOX-B | 1002 | 100 | ACTIVE | WAREHOUSE | RAM 박스 B(100개) |
-
----
-
-#### 3.4.3 작업 등록(조립): inventory_operations
-- 목표: CPU 1개 + RAM 2개를 사용하여 PC 1개를 만든다.
-- 조립은 원장상 하나의 사건(IO 1건)으로 기록되어야 하며, input(OUT) + output(IN) 라인이 같은 io_sn으로 묶여야 한다.
-
-| io_sn | io_type | io_status | io_occurred_at | io_note |
-|---:|---|---|---|---|
-| 9001 | ASSEMBLY | POSTED | 2026-03-04 11:00 | CPU1 + RAM2 → PC1 |
-
----
-
-#### 3.4.4 split + 소모 + 산출(핵심): inventory_units 변화
-조립을 실행하면, 다음이 동시에 일어난다.
-
-A) CPU 박스(5001)에서 1개 사용
-- 박스 IU(5001)의 잔량이 100 → 99로 감소한다.
-- 사용분 IU(5002, qty=1)를 새로 생성한다(split).
-- 사용분 IU(5002)는 조립에 투입되므로 `iu_status=CONSUMED`가 된다.
-
-B) RAM 박스(6001)에서 2개 사용
-- 박스 IU(6001)의 잔량이 100 → 98로 감소한다.
-- 사용분 IU(6002, qty=2)를 새로 생성한다(split).
-- 사용분 IU(6002)는 조립에 투입되므로 `iu_status=CONSUMED`가 된다.
-
-C) PC 완제품 IU 생성
-- 완제품은 기본적으로 IU qty=1(개별) 추적이다.
-- PC IU(7001, qty=1, ACTIVE)를 새로 생성한다(조립 산출물).
-
-> 결과적으로 “부품이 PC로 바뀐다”가 아니라,  
-> 부품 IU는 “소모(CONSUMED)”되고, 완제품 IU는 “생성( ACTIVE / ON_HAND 성격 )”된다.
-
-| iu_sn | iu_barcode | iu_g_sn | iu_qty | iu_status | iu_location_type | 비고 |
-|---:|---|---:|---:|---|---|---|
-| 5001 | CPU-BOX-A | 1001 | 99 | ACTIVE | WAREHOUSE | 박스 잔량(100→99) |
-| 5002 | CPU-SPLIT-1 | 1001 | 1 | CONSUMED | WAREHOUSE | 조립 투입분(1개) |
-| 6001 | RAM-BOX-B | 1002 | 98 | ACTIVE | WAREHOUSE | 박스 잔량(100→98) |
-| 6002 | RAM-SPLIT-2 | 1002 | 2 | CONSUMED | WAREHOUSE | 조립 투입분(2개) |
-| 7001 | PC-SERIAL-001 | 2001 | 1 | ACTIVE | WAREHOUSE | 조립 산출물(완제품 IU) |
-
----
-
-#### 3.4.5 원장 라인 기록: inventory_operation_lines
-조립 작업(IO#9001)은 input(OUT) 2줄 + output(IN) 1줄로 기록한다.
-- iol_iu_sn은 “어떤 IU가 소모/생성됐는지”를 남기고 싶을 때 연결한다(이 예시는 연결).
-
-| iol_sn | iol_io_sn | iol_direction | iol_g_sn | iol_qty | iol_iu_sn | iol_note |
-|---:|---:|---|---:|---:|---:|---|
-| 91001 | 9001 | OUT | 1001 | 1 | 5002 | CPU 1개 소모 |
-| 91002 | 9001 | OUT | 1002 | 2 | 6002 | RAM 2개 소모 |
-| 91003 | 9001 | IN  | 2001 | 1 | 7001 | PC 1개 생성 |
-
----
-
-#### 3.4.6 조립 후 잔고 확인: goods.g_stock
-POSTED 된 재고 작업의 결과가 잔고에 반영된다.
-
-| g_sn | g_name | g_stock(조립 후) |
-|---:|---|---:|
-| 1001 | CPU | 99 |
-| 1002 | RAM | 98 |
-| 2001 | PC  | 1 |
 
 
 ---
@@ -486,13 +395,14 @@ POSTED 된 재고 작업의 결과가 잔고에 반영된다.
   - 현금이 실제로 지급되었다는 사실을 시스템 내에도 남김
   - 직원 정산/환급 프로세스는 별도 정책(본 범위 외)
 
-### 7.4 Invoice(지급요청서/거래명세서)로 여러 PO를 묶는 경우 - 최소 세트
+### 7.4 거래명세서로 여러 PO / 여러 cost를 묶는 경우 - 최소 세트
 - `documents`
-  - 거래명세서/지급요청서(`STATEMENT`) **필수**
+  - 거래명세서/정산근거(`STATEMENT`) **필수**
   - 세금계산서/계산서(`INVOICE_TAX`) 발급 시 첨부
+- `payables`
+  - 계좌이체 건이면 payable 생성 후 `payable_cost_allocations`로 여러 cost를 연결 **권장**
 - `documents`
   - 지급 방식에 따른 증빙(카드 승인 또는 이체 영수증) **필수**
-- (가능하면) invoice_lines에 PO/PO line 연결, PO 외 부대비용 라인은 별도 invoice_line으로 분리
 
 
 ---
@@ -520,19 +430,21 @@ POSTED 된 재고 작업의 결과가 잔고에 반영된다.
 
 ---
 
-## (추가) 재무 불변식 요약 (Invoice/Payable/Payment) — v7.8.2 → v7.9.7 정본
+## (추가) 재무 불변식 요약 (Cost/Payable/Payment) — v7.9.x 정본
 
 운영에서 혼동이 잦은 3가지를 **정본 불변식**으로 고정한다.
 
-1) **Invoice는 지급 단위가 아니다.**  
-   - invoice는 외부 문서 컨테이너이며, 지급은 payable 단위로 이루어진다.
+1) **Cost가 모든 비용의 유일한 원천이다.**  
+   - 업체의 별도 지급요청 원장은 두지 않는다.
+   - 지급 근거 파일이 있더라도 `documents` + `document_links`로만 연결한다.
 
-2) **Payable이 지급 단위(재무 업무 단위)이다.**  
-   - 승인/보류/기한/부분지급/마감 등의 업무 상태는 payables에서만 관리한다.
+2) **Payable은 계좌이체가 필요한 경우에만 생성하는 내부 지급 단위이다.**  
+   - 승인/보류/기한 등의 업무 상태는 payables에서만 관리한다.
+   - payable이 어떤 비용을 근거로 하는지는 `payable_cost_allocations`로 연결한다.
 
 3) **Payment는 실제 돈이 나간 결과이다.**  
-   - payment는 “지급 사실”만 기록하며, 무엇을 얼마나 정산했는지는 `payment_lines`(cost 기준)로 정리한다.
-   - payment ↔ payable은 `payment_payable_allocations`로 연결한다(분할/묶음 지급 지원).
+   - CARD/CASH 직접 지급은 `payment_lines`로 cost와 연결한다.
+   - TRANSFER 집행은 `payment_payable_allocations`로 payable과 연결한다.
 
 추가로, 운영 정책:
 - **PO 1건 = cost 1건**을 기본으로 유지한다(`po_cost_links` 1:1 권장).  
@@ -540,5 +452,4 @@ POSTED 된 재고 작업의 결과가 잔고에 반영된다.
 
 문서/증빙:
 - 모든 증빙은 `documents`에 저장하고, 연결은 `document_links`로 한다.
-- invoice/payable 관련 코드값(예: `invoice_status`, `invoice_type`, `charge_category`, `priority_level`)은
-  `schema-policy-and-naming`의 코드북을 정본으로 따른다.
+- payables / payments / payment_lines 관련 코드값은 `schema-policy-and-naming`의 코드북을 정본으로 따른다.

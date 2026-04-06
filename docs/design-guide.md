@@ -31,26 +31,36 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 ### 2.1 cost ≠ payment ≠ payable
 재무 영역은 “발생/유출/통제”를 분리한다.
 
-- **costs**: 비용/원가/채무의 *발생 사실*
+- **costs**: 모든 비용/원가/채무의 *유일한 발생 원천*
 - **payments**: 현금/자산의 *실제 유출(지급 행위)*
-- **payables**: 이체 승인/보류/우선순위 등 내부 통제를 위한 *선택적 중간 단위*
+- **payables**: 카드/현금이 아닌 **계좌이체가 필요한 비용**에 대해서만 생성되는 *선택적 내부 지급요청 단위*
+
+운영 원칙:
+- 업체의 별도 지급요청 원장은 두지 않는다.
+- 구매 담당자는 `costs`를 기준으로 지급 방식을 결정한다.
+- 카드/현금은 `costs → payments`로 바로 기록한다.
+- 계좌이체는 `costs → payables → payments` 흐름으로 기록한다.
 
 이 분리를 통해 아래를 단순하게 지원한다.
 - 분할 지급(선금/중도금/잔금)
 - 카드 즉시결제 vs 계좌이체 승인 프로세스
-- 현금 지급 처리 및 증빙 연결
+- 비용 발생과 실제 지급의 분리
+- 분할 지급(여러 payable 또는 여러 payment)
 
 ### 2.2 Documents Hub: `documents` + `document_links` 단일 정책
 문서/증빙/첨부는 엔티티별 전용 테이블로 쪼개지 않는다.
 
 - 모든 파일 원본은 **`documents`** 에 *단일 저장*
-- 문서가 무엇의 근거인지(비용/지급/인보이스/배송/작업 등)는 **`document_links`** 로만 연결
+- 문서가 무엇의 근거인지(비용/지급/배송/작업 등)는 **`document_links`** 로만 연결
 - 동일 문서는 여러 대상에 다대다로 연결 가능(저장은 1회, 링크만 다수)
 
 #### 2.2.1 `document_links` 유효성 검증 원칙
 `document_links`는 polymorphic이므로 DB FK로 전부 강제하지 않는다.  
 `target_type + target_sn` 유효성은 애플리케이션에서 검증한다.
 
+권장 분류:
+- 거래/원가 증빙: `documents.doc_category='COST'`
+- 지급/현금흐름 증빙: `documents.doc_category='PAYMENT'`
 
 ### 2.3 발주서
 - 발주서(PO 문서)
@@ -65,13 +75,14 @@ Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
 ### 3.1 End-to-End 흐름(개념)
 대표적인 정본 흐름(국내/해외 공통)은 아래와 같다.
 
-`projects` → `order_lines`
+`projects` → `orders` → `order_lines`
 (+ 필요 시 `order_line_overrides`)
-→ `sourcing_cases`
-→ `rfqs` / `rfq_lines` / `rfq_allocations`
-→ `purchase_orders` / `po_lines` / `po_allocations`
+→ `sourcing_cases` → `sourcing_case_lines`
+  → `rfqs` / `rfq_lines` / `rfq_allocations`
+  → `purchase_orders` / `po_lines` / `po_allocations`
 → (비용) `costs` / `cost_allocations` (+ 보조: `po_cost_links`)
-→ (지급) `payments` / `payment_lines` (+ 필요 시 `payables` 및 배정 테이블)
+→ (지급-직접정산) `payments` / `payment_lines`
+→ (지급-이체통제) `payables` / `payable_cost_allocations` → `payments` / `payment_payable_allocations`
 → (증빙) `documents` + `document_links`
 
 ### 3.2 프로젝트/주문/주문라인
@@ -199,24 +210,24 @@ RFQ/PO 헤더의 sourcing_type은 조회/필터 편의용(선택)으로 둘 수 
 > 원가/마진 계산의 기준은 항상 `cost_allocations`다.  
 > `po_cost_links` 같은 링크는 조회/탐색/UI 편의용으로만 허용한다(회계 기준 아님).
 
-### 7.2 Invoice / Payable / Payment 역할 분리
-- **Invoice(`invoices`)**: 외부 거래/청구 문서 컨테이너(지급 단위 아님)
-- **Payable(`payables`)**: 내부 지급 단위(승인/보류/우선순위/부분지급/마감)
+### 7.2 Cost / Payable / Payment 역할 분리
+- **Cost(`costs`)**: 모든 비용의 유일한 원천 원장
+- **Payable(`payables`)**: 계좌이체가 필요한 경우에만 생성하는 내부 지급요청/승인 단위
 - **Payment(`payments`)**: 실지급 결과(현금흐름)
 
-기본 연결(다대다/분할 지원):
-- payable ↔ invoice: `payable_invoice_allocations`
+기본 연결:
 - payable ↔ cost: `payable_cost_allocations`
-- payment ↔ payable: `payment_payable_allocations`
-- payment ↔ cost(실정산): `payment_lines`
+- payment ↔ cost(직접정산): `payment_lines` 는 현재 사용 안함. 추후 필요시 확장 가능
+- payment ↔ payable(이체 집행): `payment_payable_allocations`
 
 ### 7.3 “무엇을 생성해야 하는지” 결정 트리(개념)
 질문 흐름:
 1) 비용이 발생했나? → YES면 `costs`
 2) 특정 프로젝트/라인/수급에 기인하나? → YES면 `cost_allocations`
-3) 돈이 실제로 나갔나? → YES면 `payments`
-4) 승인/이체 프로세스가 필요한가? → YES면 `payables`
-5) 분할 지급인가? → YES면 `payments` 여러 건 + `payment_lines` 분할 연결
+3) 카드/현금처럼 바로 결제되었나? → YES면 `payments` (+ `payment_lines`)
+4) 계좌이체 승인/보류 프로세스가 필요한가? → YES면 `payables` + `payable_cost_allocations`
+5) 승인된 payable이 실제로 집행되었나? → YES면 `payments` + `payment_payable_allocations`
+6) 분할 이체인가? → YES면 `payables`를 여러 건으로 나눈다
 
 ---
 

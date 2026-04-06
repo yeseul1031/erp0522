@@ -1,8 +1,8 @@
 # Left-over (Unsorted / Meta / Legacy-preservation)
 
-과거 문서 내용들로서, 챗지피티에 의해 온전히 이전되지 못한 내용들을 보관하기 위한 공간이다.
-최신 정보 데이터가 반영되지 않은 부분들이 남아 있으므로, 최신정본 MD와, 특히 DDL 문서를 최우선 해야한다.
-
+> Superseded note (AP 비용지급 모델): 현재 정본에서는 업체의 별도 `invoices` 원장을 두지 않는다.
+> AP 비용의 유일한 원천은 `costs`이며, `payables`는 계좌이체 건에 한해서만 `costs`를 기준으로 생성한다.
+> CARD/CASH 직접 지급은 `payments` + `payment_lines`, TRANSFER 집행은 `payables` + `payable_cost_allocations` + `payment_payable_allocations`를 사용한다.
 
 ---
 
@@ -237,7 +237,7 @@
 ### 핵심 규칙
 - 문서 파일은 항상 `documents` 로 수집한다.
 - 문서의 상위 분류는 `doc_category`, 세부 유형은 `doc_type`으로 표현한다(코드값은 확장 가능).
-- 문서가 어떤 엔티티의 근거인지(예: costs, payments, invoices, deliveries 등)는 **오직 `document_links`** 로 연결한다.
+- 문서가 어떤 엔티티의 근거인지(예: costs, payments, deliveries 등)는 **오직 `document_links`** 로 연결한다.
 - 엔티티별로 별도의 **문서 전용 테이블**을 만들지 않는다. 문서는 `documents`에 저장하고, 관계는 `document_links`로 표현한다.
 
 
@@ -293,8 +293,6 @@
   - COST: costs(ct_sn)
   - PAYABLE: payables(pv_sn)
   - PAYMENT: payments(pay_sn)
-  - INVOICE: invoices(inv_sn)
-  - INVOICE_LINE: invoice_lines(invl_sn)
   - DELIVERY: deliveries(dv_sn)
   - DELIVERY_LINE: delivery_lines(dvl_sn)
   - SHIPMENT: shipments(sh_sn)
@@ -497,20 +495,15 @@ deprecated 표현을 정본 구조로 **재작성(Rewrite)** 한 뒤 병합(Merg
   - 결제 여부와 무관하게 “비용이 발생했다”는 사실을 기록한다.
   - 프로젝트/주문/라인/수급케이스 등 어디에 귀속되는지는 `cost_allocations`로 표현한다.
 
-- `invoices` / `invoice_lines` : **외부 거래/청구 문서 컨테이너**  
-  - **Invoice는 지급 단위가 아니다.**
-  - invoice는 여러 payable로 **분할 지급**될 수도 있고, 여러 invoice가 하나의 payable로 **묶음 지급**될 수도 있다.
-  - 물품/서비스/세금/할인 등 항목은 `invoice_lines`로 관리한다.
-
 - `payables` : **내부 지급 단위(재무 업무 단위)**  
-  - 승인/보류/기한/부분지급/마감 등 “업무 큐”는 `payables`가 책임진다.
-  - payable이 커버하는 invoice는 `payable_invoice_allocations`로,
-    payable이 정산하는 cost는 `payable_cost_allocations`로 연결한다.
+  - 업체의 별도 지급요청 원장은 두지 않는다.
+  - 계좌이체가 필요한 경우에 한해 `costs`를 근거로 생성한다.
+  - payable이 정산하는 cost는 `payable_cost_allocations`로 연결한다.
 
 - `payments` : **실지급 결과(현금흐름)**  
   - 실제 돈이 나간 기록만 담는다(카드/이체/현금).
-  - 어떤 비용을 얼마나 정산했는지는 `payment_lines`로 연결한다.
-  - payment ↔ payable 연결은 `payment_payable_allocations`로 표현한다(분할/묶음 지급 지원).
+  - CARD/CASH 직접 지급은 `payment_lines`로 cost와 연결한다.
+  - TRANSFER 집행은 `payment_payable_allocations`로 payable과 연결한다.
 
 ### 2) 운영 불변 정책(정본)
 
@@ -524,20 +517,20 @@ deprecated 표현을 정본 구조로 **재작성(Rewrite)** 한 뒤 병합(Merg
 
 #### 2.2 문서/증빙(정본)
 - 모든 문서/증빙/첨부는 `documents`에 저장한다.
-- 문서가 무엇의 근거인지(비용/지급/invoice/배송/작업 등)는 `document_links`로 연결한다.
+- 문서가 무엇의 근거인지(비용/지급/배송/작업 등)는 `document_links`로 연결한다.
 - 권장 분류:
-  - 거래/원가 증빙: `documents.doc_category='COST'` → `document_links(target_type in {costs, invoices, shipments, ...})`
+  - 거래/원가 증빙: `documents.doc_category='COST'` → `document_links(target_type in {costs, shipments, ...})`
   - 지급/현금흐름 증빙: `documents.doc_category='PAYMENT'` → `document_links(target_type='payments')`
 
 ### 3) 코드북(ENUM/코드 값) — 운영 입력 표준
 
-#### 3.1 invoices
-- `invoice_status` : `RECEIVED` / `CONFIRMED` / `DISPUTED` / `VOID`
-- `source_channel` : `VENDOR` / `PLATFORM` / `INTERNAL`
-- `invoice_type` : `STATEMENT` / `TAX_INVOICE` / `RECEIPT` / `OTHER`
+#### 3.1 AP invoices (removed)
+- 현재 정본에서는 AP 영역의 `invoices` / `invoice_lines`를 사용하지 않는다.
+- 업체 문서가 있더라도 파일은 `documents`에 저장하고, 지급 근거는 `costs` 또는 `payables`에 연결한다.
 
-#### 3.2 invoice_lines
-- `line_type` : `GOODS` / `CHARGE`
+#### 3.2 payment_lines / payable_cost_allocations
+- `payment_lines` : CARD/CASH 직접 지급이 어떤 cost를 정산했는지 기록한다.
+- `payable_cost_allocations` : TRANSFER payable이 어떤 cost를 근거로 생성되었는지 기록한다.
 
 `charge_category` (권장 표준값; 확장 가능)
 - `SHIPPING_DOMESTIC`

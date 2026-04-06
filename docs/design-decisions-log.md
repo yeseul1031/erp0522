@@ -80,15 +80,6 @@
 
 ---
 
-## ADR-FIN-0001 Invoice/Payable/Payment 3단 분리
-
-- 결정: `invoices`(외부 문서) / `payables`(재무 업무 단위) / `payments`(실지급 결과)를 분리한다.
-- 이유:
-  - invoice 1장을 여러 번 나눠 지급하거나, 여러 invoice를 묶어서 지급하는 케이스가 빈번하다.
-  - 재무팀 업무 큐(승인/보류/기한/부분지급)는 payables만 보면 되고, 현금흐름은 payments만 보면 된다.
-- 기각:
-  - invoice를 지급 단위로 간주하는 방식 — 분할/묶음 지급을 자연스럽게 표현하기 어렵고 운영 쿼리가 복잡해진다.
-
 ## ADR-FIN-0002 PO 1건 = cost 1건 (운영 불변)
 
 - 결정: PO 1건을 cost 1건으로 매핑하는 운영 정책을 유지한다(권장: `po_cost_links` 1:1).
@@ -97,6 +88,18 @@
 - 운영 규칙:
   - 셀러/사업자 단위 분리가 필요하면 PO를 분할 생성한다.
   - 분할이 불필요하면 PO=cost로 묶고, 거래 증빙은 cost에 연결한다.
+
+
+## ADR-FIN-0003 AP Invoice 제거 및 Cost 기반 Payable 생성
+
+- 결정: AP 영역에서 `invoices`, `invoice_lines`, `invoice_cost_allocations`, `payable_invoice_allocations`를 제거한다.
+- 결정: `costs`를 모든 비용의 유일한 원천 원장으로 사용한다.
+- 결정: `payables`는 카드/현금이 아닌 계좌이체 건에 한해서, `costs`를 기준으로 생성한다.
+- 결정: 카드/현금 직접 지급은 `payments`로 비용 정산을 기록한다.
+- 이유:
+  - 업체에서 별도의 지급요청 원장을 운영하지 않는 실제 업무를 반영한다.
+  - 동일한 사실을 `costs`와 `invoices`에 이중 기록하는 중복을 제거한다.
+  - 계좌이체 통제는 유지하되, 카드/현금 직접 지급 경로를 단순화할 수 있다.
 
 ## ADR-DOM-0001 문서/실물/작업 분리 및 items 금지
 

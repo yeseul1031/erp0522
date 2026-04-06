@@ -69,6 +69,28 @@
 
 
 -- ======================================================================
+-- TABLE: configurations
+-- DESC : 설정정보 (사업별/공통 설정)
+-- NOTE : 잡다한 설정들을 저장. 권한은 foundation_db.users에서 관리하므로, 사용자/권한 관련 설정은 이 테이블에 저장하지 않는다. cfg_key는 사업마다 고유해야 한다(uk_cfg_biz_key). cfg_val은 json 형식으로 유연하게 저장하되, 애플리케이션에서 해석하여 사용한다.
+-- ======================================================================
+create table configurations
+(
+    cfg_sn         bigint unsigned auto_increment comment 'pk'
+        primary key,
+    cfg_biz_id     enum ('PROCUREMENT', 'MRO')        not null,
+    cfg_key        varchar(16)                        not null comment '설정 키',
+    cfg_val        json                               not null comment '설정값 json 형식',
+    cfg_created_dt datetime default current_timestamp not null,
+    cfg_updated_dt datetime default current_timestamp not null on update current_timestamp
+)
+    comment '사업마다의 각종 설정 정보들을 기록한다. (권한은 foundation_db.users에서 공통 관리)';
+
+create unique index uk_cfg_biz_key
+    on configurations (cfg_biz_id, cfg_key);
+
+
+
+-- ======================================================================
 -- TABLE: departments
 -- DESC : 부서(조직 단위)
 -- NOTE : 조직은 그룹웨어에서 관리할꺼고 이건 분리될 수 있다. 지금은 둔다.
@@ -114,20 +136,19 @@ ALTER TABLE departments
 -- DESC : 업체/기관(고객사/공급사/물류/중개 등)
 -- NOTE: 거래은행 정보는 별도 테이블로 관리한다(bank_accounts).
 -- 수령지 주소: 물건을 우리가 직접 받으러 갈때, 본사 주소와 별개로 창고 주소가 필요함
--- pt_type은 해외시, 중계사들만 조회하거나, 무언가 필터링해서 보고싶을때 쓰기 위한 용도
+-- pt_type은 추후 필터링이 필요할때를 대비
 -- ======================================================================
 CREATE TABLE parties (
   pt_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '업체/기관 PK',
-  pt_type ENUM('CUSTOMER','VENDOR','FORWARDER','BROKER','OTHER')
-    NOT NULL COMMENT '업체 유형(ENUM) | CUSTOMER:고객사, VENDOR:공급사/판매사, FORWARDER:포워더/물류, BROKER:관세사/중계, OTHER:기타(단순 퀵/배송기사 처럼 영수증 처리용으로만 등록하는 업체들)',
+  pt_type JSON NOT NULL DEFAULT '[]' COMMENT '업체 유형(ENUM) 중복가능 | CUSTOMER:매출처, VENDOR:매입처, OUTSOURCER:외주*가공 업체, OTHER:기타(단순 퀵/배송기사 처럼 영수증 처리용으로만 등록하는 업체들)',
   pt_name VARCHAR(128) NOT NULL COMMENT '업체명',
   pt_name_alias JSON NOT NULL DEFAULT '[]' COMMENT '검색을 위한 2차 이름. 여러개 넣을수 있게, json_array로. 예> Korea -> [''코리아'']' CHECK (json_valid(`pt_name_alias`)),
-  pt_country_code CHAR(2) NULL COMMENT '국가코드(ISO 2자리, 예: KR, US)',
+  pt_country_code CHAR(2) NOT NULL COMMENT '국가코드(ISO 2자리, 예: KR, US)',
   pt_biz_no VARCHAR(16) NULL COMMENT '사업자번호/등록번호',
   pt_biz_owner VARCHAR(32) NULL COMMENT '대표자명',
   pt_biz_type VARCHAR(64) NULL COMMENT '업태',
   pt_biz_ctg VARCHAR(64) NULL COMMENT '종목',
-  pt_phone VARCHAR(20) NULL COMMENT '대표전화',
+  pt_phone VARCHAR(20) NOT NULL COMMENT '대표전화',
   pt_contact_name VARCHAR(32) NULL COMMENT '담당자명',
   pt_contact_phone VARCHAR(16) NULL COMMENT '연락처',
   pt_mobile VARCHAR(16) NULL COMMENT '휴대전화',
@@ -140,7 +161,7 @@ CREATE TABLE parties (
   pt_note_1 VARCHAR(512) NULL COMMENT '비고1',
   pt_note_2 VARCHAR(128) NULL COMMENT '비고2',
   pt_note_3 VARCHAR(128) NULL COMMENT '비고3',
-  pt_disabled ENUM('Y','N') NULL COMMENT '거래중지',
+  pt_disabled ENUM('Y','N') NULL DEFAULT 'N' COMMENT '거래중지',
   pt_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pt_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   pt_shipping_zipcode VARCHAR(7) NULL COMMENT '수령지 우편번호',
@@ -149,6 +170,25 @@ CREATE TABLE parties (
   PRIMARY KEY (pt_sn),
   KEY idx_parties_pt_name (pt_name)
 ) COMMENT='업체/기관(고객사/공급사/물류/중개 등)';
+
+-- ======================================================================
+-- TABLE: party_candidates
+-- DESC : 거래처 후보
+-- NOTE : 견적시에 활용하는 잠정 거래처 정보. 발주시에는 거래처를 생성하고, 후보는 삭제해야한다.
+-- ======================================================================
+CREATE TABLE party_candidates (
+    pc_sn bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '거래처 후보 PK',
+    pc_name varchar(128) NOT NULL COMMENT '업체명',
+    pc_fax varchar(16) DEFAULT NULL COMMENT '팩스번호',
+    pc_contact_email varchar(128) DEFAULT NULL COMMENT '이메일',
+    pc_a_sn bigint(20) unsigned NOT NULL COMMENT '등록 담당자 PK (assignees)',
+    pc_create_dt datetime NOT NULL COMMENT '생성일시',
+    pc_update_dt datetime NOT NULL COMMENT '수정일시',
+    PRIMARY KEY (pc_sn),
+    KEY idx_pc_assignee (pc_a_sn),
+    CONSTRAINT fk_pc_assignee
+     FOREIGN KEY (pc_a_sn) REFERENCES assignees (a_sn)
+) COMMENT='거래처 후보';
 
 -- ======================================================================
 -- TABLE: goods
