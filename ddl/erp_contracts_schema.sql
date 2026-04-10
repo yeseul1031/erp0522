@@ -146,6 +146,7 @@ CREATE TABLE projects (
   p_ba_nego_price INT NOT NULL DEFAULT 0 COMMENT '공고처 네고금액 +/- 가능',
   p_ba_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '네고 사유',
   p_default_o_sn BIGINT UNSIGNED NULL COMMENT 'default 주문서 FK, 모든 프로젝트는 default 주문서를 1개 가진다. 다만 project 생성 시점엔 null으로 입력하고,추후 ol이 생성될때 order를 생성하고 실제 값을 반영한다.',
+  p_default_sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE') NOT NULL DEFAULT 'DOMESTIC' COMMENT '기본 수급 방식, ol이 sourcing_case로 넘어갈때 기본으로 세팅되는 값',
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (p_sn),
@@ -174,6 +175,8 @@ create table announce_links
         primary key,
     al_p_sn       bigint unsigned                    not null comment 'project sn',
     al_ba_sn      bigint unsigned                    not null comment 'ba_sn',
+    al_ba_title varchar(320) not null comment '공고 제목',
+    al_ba_announce_no varchar(32) not null comment '공고 번호',
     al_created_dt datetime default current_timestamp not null,
     constraint announce_links_projects_p_sn_fk
         foreign key (al_p_sn) references projects (p_sn)
@@ -421,6 +424,8 @@ CREATE TABLE order_line_overrides (
  *   - 공급처 최소발주단위(MOQ)로 인한 초과 구매
  *   - 향후 사용/재고 목적의 추가 구매
  * - 따라서 이 영역의 핵심은 '정합성 강제'가 아니라 '가시성(현재까지 실행/귀속된 수량의 추적)'이다.
+ *
+ * 담당자/협업자 변경이란, 퇴사 등의 사유로 관리자를 변경하는 경우를 뜻한다. 이때는 협업요청 절차를 통해서 진행하는 것이 아닌 sc_assignee_a_sn이나 sc_owner_a_sn을 직접 업데이트 한다. 상태는 유지 한다.
  * ----------------------------------------------------------------------- */
 
 CREATE TABLE sourcing_cases (
@@ -917,8 +922,28 @@ CREATE TABLE purchase_orders (
 
 
 -- ======================================================================
+-- TABLE: project_purcharse_order_links
+-- DESC : 프로젝트와 발주서 연결 테이블 (편의용)
+-- NOTE : project->ol->olo->sc->po_allocation->po 까지의 연결은 너무 길다. 편의를 위해 proejct->po 연결을 만드는거지 이것이 project와 po의 관계를 정의하는 것은 아니다.
+-- ======================================================================
+CREATE TABLE project_purchase_order_links (
+    ppol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PPOL PK',
+    ppol_p_sn BIGINT UNSIGNED NOT NULL COMMENT 'projects.p_sn',
+    ppol_po_sn BIGINT UNSIGNED NOT NULL COMMENT 'purcharse_orders.po_sn',
+    ppol_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
+    ppol_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+    PRIMARY KEY (ppol_sn),
+    UNIQUE KEY uk_project_po (ppol_p_sn, ppol_po_sn),
+    CONSTRAINT fk_ppol_project FOREIGN KEY (ppol_p_sn) REFERENCES projects(p_sn),
+    CONSTRAINT fk_ppol_po FOREIGN KEY (ppol_po_sn) REFERENCES purchase_orders(po_sn)
+) COMMENT '프로젝트와 발주서 연결 테이블 (편의용)';
+
+
+-- ======================================================================
 -- TABLE: po_lines
 -- DESC : 발주서 라인(PO 한줄) - 국내/해외 통합
+-- NOTE : pol_item_name을 자체 보유, g_sn을 가지고 있지 않고, 업체에서 원하는 품목명을 관리한다.
+-- 기획 요구사항에 따라, 별도의 독립된 물류 입출고 시스템과는 별개로, 발주 담당자가 스스로 자신의 물건들을 관리하기 위한 입출고 현황 필드들을 발주서에 자체 보유한다. 값을 입력하는 그대로 저장되며, 이력 관리는 별도로 하지 않는다 (activity log 제외). 이력을 원하면 추후 물류 입출고 구축 시점에서 가능. 물류 입출고가 구축되어도, 이곳의 입출고 시스템은 별개로 운영/유지 된다.
 -- ======================================================================
 CREATE TABLE po_lines (
   pol_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '발주서 라인 PK(업체에 보낸 실제 1줄) - 국내/해외 공용',
@@ -928,6 +953,7 @@ CREATE TABLE po_lines (
   /* 품목 */
 -- g_sn 은 수급쪽에서 관리하는거고, 발주서에서는 업체와 조율된 품목정보를 직접 쓰는게 맞다.
 --  g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
+  pol_item_name VARCHAR(128) NOT NULL COMMENT '발주서 품목명, 기본적으로 g_sn의 값을 넣어주지만 담당자가 변경할 수 있음',
   pol_qty DECIMAL(14,3) NOT NULL COMMENT '발주 수량(MOQ 등으로 더 클 수 있음)',
 
   /* 가격/통화(해외 포함) */
@@ -947,6 +973,15 @@ CREATE TABLE po_lines (
 
   pol_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pol_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+
+  /* 담당자 편의용 입출고 현황 필드 */
+  pol_in_qty DECIMAL(14,3) NULL COMMENT '입고수량',
+  pol_in_expected_dt DATETIME NULL COMMENT '입고예정일',
+  pol_in_dt DATETIME NULL COMMENT '입고일자',
+
+  pol_out_qty DECIMAL(14,3) NULL COMMENT '출고수량',
+  pol_out_dt DATETIME NULL COMMENT '출고일자',
+  pol_delivery_dt DATETIME NOT NULL COMMENT '계약납기일(OL과 관련없이 발주서용으로 별도 관리)',
 
   PRIMARY KEY (pol_sn),
   UNIQUE KEY uk_po_lines (pol_po_sn, pol_no),

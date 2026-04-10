@@ -167,9 +167,11 @@ CREATE TABLE parties (
   pt_shipping_zipcode VARCHAR(7) NULL COMMENT '수령지 우편번호',
   pt_shipping_addr_1 VARCHAR(64) NULL COMMENT '수령지 주소1',
   pt_shipping_addr_2 VARCHAR(64) NULL COMMENT '수령지 주소 상세',
+  pt_status enum ('DRAFT', 'ACTIVE', 'CLOSED') null comment '거래처 상태 DRAFT=가거래처, ACTIVE=사용(확인된 거래처), CLOSED=중지(미사용)',
   PRIMARY KEY (pt_sn),
   KEY idx_parties_pt_name (pt_name)
 ) COMMENT='업체/기관(고객사/공급사/물류/중개 등)';
+
 
 -- ======================================================================
 -- TABLE: party_candidates

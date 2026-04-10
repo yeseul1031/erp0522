@@ -222,6 +222,23 @@
 - 각 케이스는 독립 발주/비용 흐름을 가진다.
 - 최종적으로 두 케이스의 확보 수량 합이 주문항목 요구 수량을 충족해야 한다.
 
+
+---
+
+### 예시 7) 수급에 대한 상황별 시나리오
+
+* 수급 생성시, sc_assignee_a_sn=           , sc_owner_a_sn=프로젝트담당자 , sc_requested_a_sn= ,           sc_requested_at= ,         sc_accepted_at= ,      sc_rejected_at= ,       sc_status=OPEN <------------ 대기상태, 진행가능상태 아님
+* 본인 진행시, sc_assignee_a_sn=프로젝트담당자 , sc_owner_a_sn=(변경안함)   , sc_requested_a_sn= ,           sc_requested_at= ,         sc_accepted_at= ,       sc_rejected_at= ,       sc_status=SELF_ASSIGNED <--- 진행가능 상태
+* 협업 요청시, sc_assignee_a_sn=           , sc_owner_a_sn=(변경안함)   , sc_requested_a_sn=협업요청받은사람, sc_requested_at=협업요청일시, sc_accepted_at= ,       sc_rejected_at= ,       sc_status=ASSIGNING <------- 대기상태, 진행가능상태 아님
+* 협업 수락시, sc_assignee_a_sn=협업수락한사람 , sc_owner_a_sn=(변경안함)   , sc_requested_a_sn=협업요청받은사람, sc_requested_at=(변경안함), sc_accepted_at=수락요청일시, sc_rejected_at= ,      sc_status=ASSIGNEE_WORKING <- 진행가능 상태
+* 협업 거절시, sc_assignee_a_sn=           , sc_owner_a_sn=(변경안함)   , sc_requested_a_sn=협업요청받은사람, sc_requested_at=(변경안함), sc_accepted_at= ,        sc_rejected_at=거절일시,  sc_status=CANCEL <------------ 취소상태, 진행가능상태 아님
+* 담당자 변경시, sc_assignee_a_sn=신규 담당자(sc_assignee_a_sn == sc_owner_a_sn 인 경우만 변경하기. 즉 협업담당자가 다를 경우엔 바꾸지 않는다) , sc_owner_a_sn=신규 담당자   , sc_requested_a_sn=(변경안함),    sc_requested_at=(변경안함),  sc_accepted_at=(변경안함), sc_rejected_at=(변경안함), sc_status=(변경안함) <--------- ---
+* 협업자 변경시, sc_assignee_a_sn=신규 협업자 , sc_owner_a_sn=(변경안함)   , sc_requested_a_sn=(변경안함),     sc_requested_at=(변경안함), sc_accepted_at=(변경안함), sc_rejected_at=(변경안함), sc_status=(변경안함) <---------- ---
+* 협업을 회수시, sc_assignee_a_sn=(변경안함) , sc_owner_a_sn=(변경안함)    , sc_requested_a_sn=(변경안함),    sc_requested_at=(변경안함),  sc_accepted_at=(변경안함), sc_rejected_at=(변경안함), sc_status=CANCEL <----------- 취소상태, 진행가능상태 아님
+
+협업 요청을 받은 사람은, 본인이 거절하거나 혹은 협업중에 권한을 회수당했을 때도, 해당 수급 정보는 계속 보인다.
+왜냐면 회수나 거절은 CANCEL로 되고, 새로운 사람은 새로운 수급 작업을 할당받아서 해야 과거에 어떤 과정을 거쳐서 지금에 왔다라는 이력을 알 수 있기 때문이다.
+
 ---
 
 ## 2. 재무(비용/지급/증빙) 시나리오
