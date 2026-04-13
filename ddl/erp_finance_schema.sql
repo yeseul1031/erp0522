@@ -536,7 +536,7 @@ CREATE TABLE payables (
   pbl_payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 대상 업체 PK(parties) | 송금/정산 상대',
   pbl_payee_bk_sn BIGINT UNSIGNED NULL COMMENT '지급 예정인 금액을 수취할 거래처의 계좌를 식별하는 외래키이다. 지급 승인 시점에 지정된 수취 계좌를 의미한다.',
 
-  pbl_payable_status ENUM('CREATED','APPROVED','ON_HOLD','PAID','CANCELLED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류, PAID:완료, CANCELLED:취소'
+  pbl_payable_status ENUM('CREATED','APPROVED','ON_HOLD','PAID','CANCELLED', 'REJECTED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류(parties.pt_is_batch_payment=Y 일때, 대표님이 승인하면 APPROVED가 아닌 ON_HOLD로 된다, PAID:완료, CANCELLED:취소, REJECTED:반려'
     NOT NULL DEFAULT 'CREATED'
     COMMENT '지급 상태(ENUM) | CREATED:작성, APPROVED:승인, ON_HOLD:보류, PAID:완료, CANCELLED:취소',
 
@@ -546,7 +546,7 @@ CREATE TABLE payables (
   pbl_requested_at DATETIME NOT NULL COMMENT '지급 요청일시(업무 이벤트)',
   pbl_approved_at DATETIME NULL COMMENT '승인일시(업무 이벤트)',
   pbl_due_at DATE NULL COMMENT '지급 예정/기한(업무 이벤트)',
-
+경
   pbl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급 통화',
   pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '지급 대상 총액(업무 기준)',
 
