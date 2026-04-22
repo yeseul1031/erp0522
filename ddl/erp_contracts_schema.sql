@@ -74,7 +74,7 @@
                       |     |              |
                       |     +---> N order_lines (주문항목, 뭘 납품할지 정의)
                       |              |    |
-                      |              |    +---> N order_line_overrides (예외 케이스)
+                      |              |    +---> N order_line_overrides (희소 케이스)
                       |              |              |
                       |              +---> (논리적 1) sourcing_cases (수급 담당자 지정, 물리적으로는 여러개지만 논리적으로는 1:1 매핑임. sourcing_cases.dc_is_active = true)
                       |                             |    |
@@ -145,7 +145,7 @@ CREATE TABLE projects (
   p_site_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '현장명',
   p_ba_nego_price INT NOT NULL DEFAULT 0 COMMENT '공고처 네고금액 +/- 가능',
   p_ba_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '네고 사유',
-  p_default_o_sn BIGINT UNSIGNED NULL COMMENT 'default 주문서 FK, 모든 프로젝트는 default 주문서를 1개 가진다. 다만 project 생성 시점엔 null으로 입력하고,추후 ol이 생성될때 order를 생성하고 실제 값을 반영한다.',
+  p_default_o_sn BIGINT UNSIGNED NOT NULL COMMENT 'default 주문서 FK, 모든 프로젝트는 default 주문서를 1개 가진다. project 생성 시점에 order를 생성하고 이 값을 반영한다.',
   p_default_sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE') NOT NULL DEFAULT 'DOMESTIC' COMMENT '기본 수급 방식, ol이 sourcing_case로 넘어갈때 기본으로 세팅되는 값',
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -430,7 +430,8 @@ CREATE TABLE order_line_overrides (
 
 CREATE TABLE sourcing_cases (
   sc_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '수급 케이스 PK',
-  sc_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines) (1:1)',
+  sc_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines) (1:N)',
+  sc_olo_sn BIGINT UNSIGNED NULL COMMENT '주문라인 희소 케이스 PK(order_line_overrides) (1:N)',
   sc_required_qty DECIMAL(14,3) NOT NULL COMMENT '요구된 수급 수량(order_line 의 수량과는 다를 수 있음)',
   sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
     NOT NULL COMMENT '수급 방식(ENUM) | DOMESTIC:국내구매, OVERSEAS:해외구매, IN_HOUSE:자체제작',
@@ -462,11 +463,13 @@ CREATE TABLE sourcing_cases (
   sc_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   sc_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (sc_sn),
-  UNIQUE KEY uk_sourcing_cases_ol_sn (sc_ol_sn),
+  KEY uk_sourcing_cases_ol_sn (sc_ol_sn, sc_olo_sn),
   KEY idx_sourcing_cases_assignee (sc_assignee_a_sn),
   KEY idx_sourcing_cases_status (sc_status),
   CONSTRAINT fk_sourcing_cases_order_lines
-    FOREIGN KEY (sc_ol_sn) REFERENCES order_lines(ol_sn),
+      FOREIGN KEY (sc_ol_sn) REFERENCES order_lines(ol_sn),
+  CONSTRAINT fk_sourcing_cases_order_line_overrides
+      FOREIGN KEY (sc_olo_sn) REFERENCES order_line_overrides(olo_sn),
   CONSTRAINT fk_sourcing_cases_assignee
     FOREIGN KEY (sc_assignee_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='수급 케이스(주문라인 단위 공통 컨테이너)';
@@ -742,11 +745,11 @@ CREATE TABLE rfq_plans (
     rfqp_nick VARCHAR(32) NOT NULL COMMENT '견적기안 별칭(내부 바구니(?)용, 예: "그룹1")',
     rfqp_choice_pt_sn BIGINT UNSIGNED NULL COMMENT '선택된 업체 PK(parties) | 견적기안 작성 시, 여러 후보 업체 중에서 최종적으로 선택된 업체가 있을 때 설정',
     rfqp_rfq_sn BIGINT UNSIGNED NULL COMMENT '선택된 RFQ PK',
-    rfqp_status ENUM('DRAFT', 'DONE', 'CANCELLED') NOT NULL COMMENT '견적기안 상태(ENUM) | DRAFT:작업중, DONE:완료(rfq생성됨)',
+    rfqp_status ENUM('DRAFT', 'DONE') NOT NULL COMMENT '견적기안 상태(ENUM) | DRAFT:작업중, DONE:완료(rfq생성됨)',
     rfqp_visible ENUM('Y','N') NOT NULL DEFAULT 'Y' COMMENT '견적 기안 상태와 기안바구니(왼쪽 리스트)에 소속 여부는 별개임. 목록에서 명시적으로 뺄때 안보임',
     rfqp_a_sn BIGINT UNSIGNED NOT NULL COMMENT 'ASSIGNEE PK',
-    rfpq_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '세금 처리 종류| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
-    rfpq_req_note VARCHAR(500) NOT NULL COMMENT '업체 전달용 비고/요청사항',
+    rfqp_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '세금 처리 종류| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
+    rfqp_req_note VARCHAR(500) NOT NULL COMMENT '업체 전달용 비고/요청사항',
     rfqp_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
     rfqp_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
@@ -770,6 +773,13 @@ CREATE TABLE rfqp_lines (
     rfqpl_rfqp_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ Plan PK(견적기안)',
     rfqpl_no INT NOT NULL COMMENT 'RFQ 내 줄번호',
     rfqpl_g_sn BIGINT UNSIGNED NOT NULL COMMENT 'GOODS PK',
+
+    /* 견적요청 시점의 정보 스냅샷 */
+    rfqpl_manufacturer_name VARCHAR(128) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
+    rfqpl_name VARCHAR(128) NOT NULL COMMENT '상품명(카탈로그명)',
+    rfqpl_model_no VARCHAR(32) NULL COMMENT '모델번호',
+    rfqpl_spec TEXT NOT NULL COMMENT '규격/옵션 TEXT',
+    rfqpl_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',
 
     /* 견적요청정보 */
     rfqpl_req_name VARCHAR(128) NOT NULL COMMENT '(견적요청) 품목명(예: 십자 드라이버)',
@@ -807,6 +817,7 @@ CREATE TABLE rfqp_vendors
     rfqpv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ Plan Vendor=Parties PK',
     rfqpv_rfqp_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ Plan PK(견적기안)',
     rfqpv_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '업체 PK(parties)',
+    rfqpv_rfq_sn BIGINT UNSIGNED NULL COMMENT 'rfqs PK, 생성 눌렀을때 값이 들어감',
 
     rfqpv_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
     rfqpv_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -853,6 +864,7 @@ CREATE TABLE rfqs (
 
 --  rfq_req_pub_note VARCHAR(500) NULL COMMENT 'RFQ 요청 메모(견적기안과 별개의 추가로 개별 업체 전달용이 필요할때)',
   rfq_res_pub_note VARCHAR(500) NULL COMMENT 'RFQ 응답 메모(업체가 보낸 코멘트)',
+  rfq_res_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '응답받은 세금 처리 종류, 기본은 rfqp.tax_type을 넣기| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
   rfq_note VARCHAR(500) NULL COMMENT 'RFQ 메모(내부 전용)',
 
   rfq_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -875,23 +887,23 @@ CREATE TABLE rfqs (
 CREATE TABLE rfq_lines (
   rfql_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 PK(업체에 보낸 실제 1줄) - 국내/해외 공용',
   rfql_rfq_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs)',
-  rfql_rfpql_sn BIGINT UNSIGNED NOT NULL COMMENT '견적기안 항목 PK(rfqp_lines) | 이 RFQ 라인이 어떤 견적기안 항목에서 생성되었는지 추적',
+  rfql_rfqpl_sn BIGINT UNSIGNED NOT NULL COMMENT '견적기안 항목 PK(rfqp_lines) | 이 RFQ 라인이 어떤 견적기안 항목에서 생성되었는지 추적',
 
   rfql_supply_type ENUM('SUPPLY_AVAILABLE', 'SUBSTITUTE_OFFERED', 'NOT_HANDLED', 'TEMPORARY_OUT') COMMENT 'SUPPLY_AVAILABLE: 공급 가능, SUBSTITUTE_OFFERED: 대체품 제안, NOT_HANDLED: 취급 불가, TEMPORARY_OUT: 일시 품절',
 
   /* 견적응답정보 */
-  rfql_res_qty DECIMAL(14,3) NOT NULL COMMENT '(견적응답) 수량',
-  rfql_res_unit VARCHAR(20) NULL COMMENT '(견적응답) 단위(예: EA, SET)',
-  rfql_res_unit_price DECIMAL(18,2) NULL COMMENT '(견적응답) 견적받은 단가',
+  rfql_res_qty DECIMAL(14,3) NOT NULL DEFAULT 0 COMMENT '(견적응답) 수량',
+  rfql_res_unit VARCHAR(20) NOT NULL DEFAULT '' COMMENT '(견적응답) 단위(예: EA, SET)',
+  rfql_res_unit_price DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '(견적응답) 견적받은 단가',
   rfql_res_note VARCHAR(500) NULL COMMENT '(견적응답) 대체품, 최소구매수량 등의 기타 정보는 여기에 기입하기',
 
   rfql_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   rfql_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (rfql_sn),
-  UNIQUE KEY uk_rfq_lines (rfql_rfq_sn, rfql_rfpql_sn),
+  UNIQUE KEY uk_rfq_lines (rfql_rfq_sn, rfql_rfqpl_sn),
   CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfql_rfq_sn) REFERENCES rfqs(rfq_sn),
-  CONSTRAINT fk_rfq_lines_rfpql FOREIGN KEY (rfql_rfpql_sn) REFERENCES rfqp_lines(rfqpl_sn)
+  CONSTRAINT fk_rfq_lines_rfqpl FOREIGN KEY (rfql_rfqpl_sn) REFERENCES rfqp_lines(rfqpl_sn)
 ) COMMENT='RFQ 라인(요청 1줄 + 회신 값(reply_*), 덮어쓰기 정책) - 국내/해외 통합';
 
 
@@ -942,7 +954,7 @@ CREATE TABLE purchase_orders (
   po_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '발주서 PK - 국내/해외 공용',
 
   /* 수급 케이스 연결 */
-  po_primary_sc_sn BIGINT UNSIGNED NULL COMMENT '대표 수급 케이스 PK(sourcing_cases) | 단독 진행이면 설정, 혼합이면 NULL 가능',
+--  po_primary_sc_sn BIGINT UNSIGNED NULL COMMENT '대표 수급 케이스 PK(sourcing_cases) | 단독 진행이면 설정, 혼합이면 NULL 가능',
 -- 혹시 나중에 수급방식 필드가 필요할지도 모르겠는데, 그때 추가하자.
 --  po_sourcing_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE','SERVICE') NULL COMMENT '수급 방식(ENUM) | 헤더 편의/필터용(선택)',
 
@@ -963,24 +975,30 @@ CREATE TABLE purchase_orders (
   po_expected_delivery_at DATE NULL COMMENT '예상 납기일(업무 이벤트)',
 
   /* 인도/납품/결제 */
-  po_delivery_method ENUM('PICKUP_BY_LOGISTICS', 'SELLER_SHIP_TO_COMPANY', 'SELLER_SHIP_TO_CUSTOMER') NULL COMMENT '판매처가 보내는 방식, 회사 관점의 흐름(회사로 오냐/직송이냐/직접 픽업이냐)',
-  po_delivery_address VARCHAR(500) NULL COMMENT '인도/납품 주소',
-  po_trade_terms VARCHAR(20) NULL COMMENT '인도조건(Incoterms 등) | 해외용 주로 사용(옵션)',
+  -- po_delivery_method ENUM('PICKUP_BY_LOGISTICS', 'SELLER_SHIP_TO_COMPANY', 'SELLER_SHIP_TO_CUSTOMER') NULL COMMENT '판매처가 보내는 방식, 회사 관점의 흐름(회사로 오냐/직송이냐/직접 픽업이냐)',
+  -- po_delivery_address VARCHAR(500) NULL COMMENT '인도/납품 주소',
+  -- po_trade_terms VARCHAR(20) NULL COMMENT '인도조건(Incoterms 등) | 해외용 주로 사용(옵션)',
 
   /* 프로세스/정책(선택) */
-  po_fx_rate_policy ENUM('QUOTE_DATE','PO_DATE','PAYMENT_DATE','CUSTOMS_DATE','MANUAL') NULL COMMENT '환율 적용 기준(정책 ENUM) | 숫자 환율은 costs/cost_fx_applications에 고정 저장 | QUOTE_DATE:견적일, PO_DATE:발주일, PAYMENT_DATE:지급일, CUSTOMS_DATE:통관일, MANUAL:수동',
+  -- po_fx_rate_policy ENUM('QUOTE_DATE','PO_DATE','PAYMENT_DATE','CUSTOMS_DATE','MANUAL') NULL COMMENT '환율 적용 기준(정책 ENUM) | 숫자 환율은 costs/cost_fx_applications에 고정 저장 | QUOTE_DATE:견적일, PO_DATE:발주일, PAYMENT_DATE:지급일, CUSTOMS_DATE:통관일, MANUAL:수동',
 
   po_payment_method VARCHAR(100) NULL COMMENT '결제 방식',
   po_payment_terms VARCHAR(200) NULL COMMENT '결제 조건',
-  po_tax_type ENUM('TAX_INCLUDED','TAX_EXCLUDED','UNKNOWN')
-    NOT NULL DEFAULT 'UNKNOWN'
-    COMMENT '부가세 포함 여부(ENUM) | 국내/해외 모두 사용 가능',
+  po_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '세금 처리 종류| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
 
   /* 해외에서만 주로 쓰는 필드(옵션) */
   po_ship_from_country CHAR(2) NULL COMMENT '발송국가(ISO-3166-1 alpha-2) | 예: CN, US',
   po_ship_to_country CHAR(2) NULL COMMENT '도착국가(ISO-3166-1 alpha-2) | 보통 KR',
 
-  po_note VARCHAR(500) NULL COMMENT '발주 메모(헤더)',
+  po_pub_note VARCHAR(500) NULL COMMENT '발주서에서 업체에게 전달할 메모',
+  po_priv_note VARCHAR(500) NULL COMMENT '발주에 내부에서만 보는 메모',
+  po_assignee_note VARCHAR(500) NULL COMMENT '담당자 메모',
+  po_ceo_note VARCHAR(500) NULL COMMENT '발주에 대표님 메모',
+
+  po_delivery_terms VARCHAR(128) NOT NULL DEFAULT '' COMMENT '납품조건, 보통은 인도조건 배송장소등을 넣으면 됨',
+  po_nego_price INT NOT NULL DEFAULT 0 COMMENT '발주서 네고금액 +/- 가능',
+  po_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '발주서 네고 사유',
+  po_valid_until_dt DATETIME NOT NULL COMMENT '유효기간',
 
   po_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   po_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -988,13 +1006,11 @@ CREATE TABLE purchase_orders (
   PRIMARY KEY (po_sn),
   KEY idx_pos_vendor (po_vendor_pt_sn),
   KEY idx_pos_creator (po_a_sn),
-  KEY idx_pos_primary_sc (po_primary_sc_sn),
   KEY idx_pos_source_rfq (po_source_rfq_sn),
   KEY idx_pos_status (po_status),
 
   CONSTRAINT fk_pos_vendor FOREIGN KEY (po_vendor_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_pos_creator FOREIGN KEY (po_a_sn) REFERENCES assignees(a_sn),
-  CONSTRAINT fk_pos_primary_sc FOREIGN KEY (po_primary_sc_sn) REFERENCES sourcing_cases(sc_sn),
   CONSTRAINT fk_pos_source_rfq FOREIGN KEY (po_source_rfq_sn) REFERENCES rfqs(rfq_sn)
 
 ) COMMENT='발주서(PO) 헤더 - 국내/해외 통합';
@@ -1029,10 +1045,15 @@ CREATE TABLE po_lines (
   pol_po_sn BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders)',
   pol_no INT NOT NULL COMMENT '발주서 내 줄번호',
 
-  /* 품목 */
--- g_sn 은 수급쪽에서 관리하는거고, 발주서에서는 업체와 조율된 품목정보를 직접 쓰는게 맞다.
---  g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
-  pol_item_name VARCHAR(128) NOT NULL COMMENT '발주서 품목명, 기본적으로 g_sn의 값을 넣어주지만 담당자가 변경할 수 있음',
+  g_sn BIGINT UNSIGNED NOT NULL COMMENT '기성상품 PK(goods)',
+
+  /* 발주 시점의 정보 스냅샷 */
+  pol_manufacturer_name VARCHAR(128) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
+  pol_name VARCHAR(128) NOT NULL COMMENT '상품명(카탈로그명)',
+  pol_model_no VARCHAR(32) NULL COMMENT '모델번호',
+  pol_spec TEXT NOT NULL COMMENT '규격/옵션 TEXT',
+  pol_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',
+
   pol_qty DECIMAL(14,3) NOT NULL COMMENT '발주 수량(MOQ 등으로 더 클 수 있음)',
 
   /* 가격/통화(해외 포함) */
@@ -1055,7 +1076,6 @@ CREATE TABLE po_lines (
 
   /* 담당자 편의용 입고 현황 필드 */
   pol_in_qty DECIMAL(14,3) NULL COMMENT '입고수량',
-  pol_in_expected_dt DATETIME NULL COMMENT '입고예정일',
   pol_in_dt DATETIME NULL COMMENT '입고일자',
 
   PRIMARY KEY (pol_sn),
@@ -1065,6 +1085,31 @@ CREATE TABLE po_lines (
   CONSTRAINT fk_po_lines_po FOREIGN KEY (pol_po_sn) REFERENCES purchase_orders(po_sn),
   CONSTRAINT fk_po_lines_source_rfql FOREIGN KEY (source_rfql_sn) REFERENCES rfq_lines(rfql_sn)
 ) COMMENT='발주서 라인(PO 한줄) - 국내/해외 통합';
+
+
+
+-- ======================================================================
+-- TABLE: po_cost_lines
+-- DESC : 발주 특수 비용 항목들
+-- NOTE : 개별 항목마다 과세 적용이 다를 수 있다.
+-- ======================================================================
+CREATE TABLE po_cost_lines (
+  pocl_sn    BIGINT UNSIGNED AUTO_INCREMENT NOT NULL COMMENT '발주 특수 비용 라인 PK',
+  pocl_po_sn BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders)',
+  pocl_name  VARCHAR(128) NOT NULL COMMENT '비용 항목명(운송료, 포장비, 보험료 등)',
+  pocl_qty   DECIMAL(14,3) DEFAULT 0 NULL COMMENT '수량',
+  pocl_cost  DECIMAL(18,2) NULL COMMENT '단가',
+  pocl_tax   DECIMAL(18,2) NULL COMMENT '세금',
+  pocl_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '세금 처리 종류| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
+  pocl_note  VARCHAR(500) NOT NULL COMMENT '메모',
+  pocl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
+  pocl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+
+  PRIMARY KEY (pocl_sn),
+  KEY idx_pocl_po (pocl_po_sn),
+  CONSTRAINT fk_pocl_po FOREIGN KEY (pocl_po_sn) REFERENCES purchase_orders(po_sn)
+) COMMENT '발주 특수 비용 항목들';
+
 
 
 -- ======================================================================

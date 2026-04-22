@@ -175,25 +175,6 @@ CREATE TABLE parties (
 
 
 -- ======================================================================
--- TABLE: party_candidates
--- DESC : 거래처 후보
--- NOTE : 견적시에 활용하는 잠정 거래처 정보. 발주시에는 거래처를 생성하고, 후보는 삭제해야한다.
--- ======================================================================
-CREATE TABLE party_candidates (
-    pc_sn bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '거래처 후보 PK',
-    pc_name varchar(128) NOT NULL COMMENT '업체명',
-    pc_fax varchar(16) DEFAULT NULL COMMENT '팩스번호',
-    pc_contact_email varchar(128) DEFAULT NULL COMMENT '이메일',
-    pc_a_sn bigint(20) unsigned NOT NULL COMMENT '등록 담당자 PK (assignees)',
-    pc_create_dt datetime NOT NULL COMMENT '생성일시',
-    pc_update_dt datetime NOT NULL COMMENT '수정일시',
-    PRIMARY KEY (pc_sn),
-    KEY idx_pc_assignee (pc_a_sn),
-    CONSTRAINT fk_pc_assignee
-     FOREIGN KEY (pc_a_sn) REFERENCES assignees (a_sn)
-) COMMENT='거래처 후보';
-
--- ======================================================================
 -- TABLE: goods
 -- DESC : 기성상품(재사용 카탈로그/품목 마스터)
 -- ======================================================================
@@ -205,8 +186,8 @@ CREATE TABLE goods (
   g_unit VARCHAR(16) NULL COMMENT '물품 단위(예: EA, 개, 톤 등)',
   g_average_price INT NOT NULL DEFAULT 0 COMMENT '평단가 (부가세 제외 금액, 해외는 포함된 금액)',
   g_stock INT NOT NULL DEFAULT 0 COMMENT 'IO/IOL(및 IU state 변화)에 의해 트랜잭션으로 항상 최신화되는 현재잔고(balance)',
-  g_tags JSON NULL COMMENT '태그들 (JSON 배열 권장)' CHECK (json_valid(`g_tags`)),
-  g_spec_json JSON NULL COMMENT '규격/옵션(JSON). 기존 text g_spec은 마이그레이션 시 JSON으로 포장하여 저장',
+  g_tags VARCHAR(256) NULL COMMENT '태그들',
+  g_spec TEXT NOT NULL COMMENT '규격/옵션 TEXT',
   g_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',
   g_applicable_spec VARCHAR(128) NULL COMMENT '적용 규격/참조',
   g_note VARCHAR(500) NULL COMMENT '비고 (기존 g_etc 포함 가능)',

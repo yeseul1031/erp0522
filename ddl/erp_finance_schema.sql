@@ -309,7 +309,7 @@ CREATE TABLE bank_accounts (
   bk_account_label VARCHAR(80) NULL COMMENT '계좌 별칭(옵션; 예: 주계좌/세금계산서용/긴급용)',
   bk_note VARCHAR(500) NULL COMMENT '메모(옵션)',
 
-  bk_is_primary TINYINT(1) NOT NULL DEFAULT 0 COMMENT '주 계좌 여부(0/1)',
+  bk_is_primary TINYINT(1) NULL COMMENT '주 계좌 여부, 1이면 주사용계좌. NULL이면 그냥 계좌.',
   bk_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '사용중 여부(0/1)',
 
   -- 해외 송금 대응(필요 시에만 입력)
@@ -329,7 +329,8 @@ CREATE TABLE bank_accounts (
   KEY idx_bk_pt (bk_pt_sn, bk_is_active, bk_is_primary),
   KEY idx_bk_bank_account (bk_account_number, bk_bank_name),
 
-  UNIQUE KEY uk_bk_pt_bank_acct (bk_pt_sn, bk_bank_name, bk_account_number)
+  UNIQUE KEY uk_bk_pt_bank_acct (bk_pt_sn, bk_bank_name, bk_account_number),
+  UNIQUE KEY uk_bk_is_primary (bk_pt_sn, bk_is_primary)
 
   -- FK는 운영정책에 따라 선택
   -- ,CONSTRAINT fk_bank_accounts_pt FOREIGN KEY (bk_pt_sn) REFERENCES parties(pt_sn)
@@ -546,7 +547,7 @@ CREATE TABLE payables (
   pbl_requested_at DATETIME NOT NULL COMMENT '지급 요청일시(업무 이벤트)',
   pbl_approved_at DATETIME NULL COMMENT '승인일시(업무 이벤트)',
   pbl_due_at DATE NULL COMMENT '지급 예정/기한(업무 이벤트)',
-경
+
   pbl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급 통화',
   pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '지급 대상 총액(업무 기준)',
 
