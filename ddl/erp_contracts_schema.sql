@@ -145,7 +145,7 @@ CREATE TABLE projects (
   p_site_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '현장명',
   p_ba_nego_price INT NOT NULL DEFAULT 0 COMMENT '공고처 네고금액 +/- 가능',
   p_ba_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '네고 사유',
-  p_default_o_sn BIGINT UNSIGNED NOT NULL COMMENT 'default 주문서 FK, 모든 프로젝트는 default 주문서를 1개 가진다. project 생성 시점에 order를 생성하고 이 값을 반영한다.',
+  p_default_o_sn BIGINT UNSIGNED NULL COMMENT 'default 주문서 FK, 모든 프로젝트는 default 주문서를 1개 가진다. project 생성 시점에 order를 생성하고 이 값을 반영한다.',
   p_default_sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE') NOT NULL DEFAULT 'DOMESTIC' COMMENT '기본 수급 방식, ol이 sourcing_case로 넘어갈때 기본으로 세팅되는 값',
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -229,18 +229,21 @@ CREATE TABLE blanket_order_lines (
                                      bol_no            INT            NOT NULL COMMENT '주문서 내 라인 번호',
 
                                      web_item_name    VARCHAR(128)   NOT NULL COMMENT '(사이트상) 요구 품목명(예: 십자 드라이버)',
+                                     web_item_code    VARCHAR(32)        NULL COMMENT '(사이트상) 요구 품목코드',
                                      web_item_spec    JSON NULL COMMENT '(사이트상) 요구 규격/조건(자유형 JSON)',
                                      web_item_qty     DECIMAL(14, 3) NOT NULL COMMENT '(사이트상) 요구 수량(납품 약속 수량)',
                                      web_item_unit    VARCHAR(20) NULL COMMENT '(사이트상) 단위(예: EA, SET)',
                                      web_unit_price   DECIMAL(18, 2) NULL COMMENT '(사이트상) 판매 단가(고객에 납품 단가, 모르면 NULL)',
 
                                      doc_item_name    VARCHAR(128)   NOT NULL COMMENT '(문서상) 요구 품목명(예: 십자 드라이버)',
+                                     doc_item_code    VARCHAR(32)        NULL COMMENT '(문서상) 요구 품목코드',
                                      doc_item_spec    JSON NULL COMMENT '(문서상) 요구 규격/조건(자유형 JSON)',
                                      doc_item_qty     DECIMAL(14, 3) NOT NULL COMMENT '(문서상) 요구 수량(납품 약속 수량)',
                                      doc_item_unit    VARCHAR(20) NULL COMMENT '(문서상) 단위(예: EA, SET)',
                                      doc_unit_price   DECIMAL(18, 2) NULL COMMENT '(문서상) 판매 단가(고객에 납품 단가, 모르면 NULL)',
 
                                      final_item_name  VARCHAR(128)   NOT NULL COMMENT '(검토된) 요구 품목명(예: 십자 드라이버)',
+                                     final_item_code  VARCHAR(32)        NULL COMMENT '(검토된) 요구 품목코드',
                                      final_item_spec  JSON NULL COMMENT '(검토된) 요구 규격/조건(자유형 JSON)',
                                      final_item_qty   DECIMAL(14, 3) NOT NULL COMMENT '(검토된) 요구 수량(납품 약속 수량)',
                                      final_item_unit  VARCHAR(20) NULL COMMENT '(검토된) 단위(예: EA, SET)',
@@ -317,18 +320,21 @@ CREATE TABLE order_lines (
   ol_no INT NOT NULL COMMENT '주문서 내 라인 번호',
 
   web_item_name VARCHAR(128) NOT NULL COMMENT '(사이트상) 요구 품목명(예: 십자 드라이버)',
+  web_item_code VARCHAR(32)      NULL COMMENT '(사이트상) 요구 품목코드',
   web_item_spec JSON NULL COMMENT '(사이트상) 요구 규격/조건(자유형 JSON)',
   web_item_qty DECIMAL(14,3) NOT NULL COMMENT '(사이트상) 요구 수량(납품 약속 수량)',
   web_item_unit VARCHAR(20) NULL COMMENT '(사이트상) 단위(예: EA, SET)',
   web_unit_price DECIMAL(18,2) NULL COMMENT '(사이트상) 판매 단가(고객에 납품 단가, 모르면 NULL)',
 
   doc_item_name VARCHAR(128) NOT NULL COMMENT '(문서상) 요구 품목명(예: 십자 드라이버)',
+  doc_item_code  VARCHAR(32)     NULL COMMENT '(문서상) 요구 품목코드',
   doc_item_spec JSON NULL COMMENT '(문서상) 요구 규격/조건(자유형 JSON)',
   doc_item_qty DECIMAL(14,3) NOT NULL COMMENT '(문서상) 요구 수량(납품 약속 수량)',
   doc_item_unit VARCHAR(20) NULL COMMENT '(문서상) 단위(예: EA, SET)',
   doc_unit_price DECIMAL(18,2) NULL COMMENT '(문서상) 판매 단가(고객에 납품 단가, 모르면 NULL)',
 
   final_item_name VARCHAR(128) NOT NULL COMMENT '(검토된) 요구 품목명(예: 십자 드라이버)',
+  final_item_code VARCHAR(32)      NULL COMMENT '(검토된) 요구 품목코드',
   final_item_spec JSON NULL COMMENT '(검토된) 요구 규격/조건(자유형 JSON)',
   final_item_qty DECIMAL(14,3) NOT NULL COMMENT '(검토된) 요구 수량(납품 약속 수량)',
   final_item_unit VARCHAR(20) NULL COMMENT '(검토된) 단위(예: EA, SET)',
@@ -999,6 +1005,12 @@ CREATE TABLE purchase_orders (
   po_nego_price INT NOT NULL DEFAULT 0 COMMENT '발주서 네고금액 +/- 가능',
   po_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '발주서 네고 사유',
   po_valid_until_dt DATETIME NOT NULL COMMENT '유효기간',
+
+  /* 서비스 UI를 위한 캐시 필드들 - pol이 추가될때마다 업데이트 하면됨. 아래 po_default_p_sn 값과 다를때 날짜를 비교해서 더 빠르면 교체하면 됨 */
+  po_default_p_sn BIGINT UNSIGNED NULL COMMENT '서비스 UI를 위한 캐시 필드들 - pol이 추가될때마다 업데이트 하면됨. 아래 po_default_p_sn 값과 다를때 날짜를 비교해서 더 빠르면 교체하면 됨',
+  po_default_p_delivery_dt DATETIME NULL COMMENT '서비스 UI를 위한 캐시 필드들, 납기일',
+  po_default_p_name VARCHAR(128) NULL COMMENT '서비스 UI를 위한 캐시 필드들, 계약업체명',
+  po_default_site_name VARCHAR(100) NULL COMMENT '서비스 UI를 위한 캐시 필드들, 납품처(현장명)',
 
   po_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   po_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
