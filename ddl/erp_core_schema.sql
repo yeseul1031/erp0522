@@ -294,10 +294,10 @@ Balhea ERP - Documents Hub (documents + document_links) Extension v7.8.2
 /* 문서 허브: 모든 파일/서류는 여기로 수집 */
 CREATE TABLE documents (
   doc_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'PK',
-  doc_category VARCHAR(30) NOT NULL COMMENT '문서 카테고리(권장; 확장 가능): COST, PAYMENT, INVOICE, PURCHASE, DELIVERY, CUSTOMS, QUALITY, CONTRACT, TAX, SETTLEMENT, REFUND, OTHER',
-  doc_type VARCHAR(40) NOT NULL COMMENT '문서 타입(권장 예시; 확장 가능): CASH_RECEIPT, SELLER_RECEIPT, CARD_APPROVAL, CARD_SLIP, BANK_TRANSFER_RECEIPT, BANK_TRANSFER_PROOF, TAX_INVOICE, STATEMENT, PURCHASE_DETAILS, BL, AWB, PACKING_LIST, CUSTOMS_DOC, DELIVERY_NOTE, DELIVERY_PROOF, SHIPMENT_PROOF, INSPECTION_REPORT, PHOTO, PLATFORM_SETTLEMENT, REFUND_PROOF, OTHER',
-  doc_issuer_name VARCHAR(120) NULL COMMENT '발행처/제공처(거래처/포워더/관세사/창고/검사기관 등)',
-  doc_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT 'parties.pt_sn (가능하면)',
+  doc_category VARCHAR(30) NOT NULL COMMENT '문서 출처 테이블: PROJECTS, ORDER_LINES, ODER_LINE_OVERIDES ... ', -- COST, PAYMENT, INVOICE, PURCHASE, DELIVERY, CUSTOMS, QUALITY, CONTRACT, TAX, SETTLEMENT, REFUND, OTHER',
+--  doc_type VARCHAR(40) NOT NULL COMMENT '문서 타입(권장 예시; 확장 가능): CASH_RECEIPT, SELLER_RECEIPT, CARD_APPROVAL, CARD_SLIP, BANK_TRANSFER_RECEIPT, BANK_TRANSFER_PROOF, TAX_INVOICE, STATEMENT, PURCHASE_DETAILS, BL, AWB, PACKING_LIST, CUSTOMS_DOC, DELIVERY_NOTE, DELIVERY_PROOF, SHIPMENT_PROOF, INSPECTION_REPORT, PHOTO, PLATFORM_SETTLEMENT, REFUND_PROOF, OTHER',
+--  doc_issuer_name VARCHAR(120) NULL COMMENT '발행처/제공처(거래처/포워더/관세사/창고/검사기관 등)',
+--  doc_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT 'parties.pt_sn (가능하면)',
 --  doc_no VARCHAR(80) NULL COMMENT '문서번호(있으면)',
 --  doc_date DATE NULL COMMENT '문서일자(있으면)',
 --  doc_ccy CHAR(3) NULL COMMENT '문서 금액 통화(있으면)',
@@ -308,9 +308,9 @@ CREATE TABLE documents (
   doc_mime_type VARCHAR(80) NULL COMMENT 'MIME 타입(선택)',
   doc_note VARCHAR(255) NULL COMMENT '비고',
   doc_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
-  doc_created_by_a_sn BIGINT UNSIGNED NULL COMMENT 'actors.a_sn (업로더/등록자)',
-  KEY idx_doc_category_type (doc_category, doc_type),
-  KEY idx_doc_issuer_pt_sn (doc_issuer_pt_sn)
+  doc_created_by_a_sn BIGINT UNSIGNED NULL COMMENT 'actors.a_sn (업로더/등록자)'
+--  KEY idx_doc_category_type (doc_category, doc_type),
+--  KEY idx_doc_issuer_pt_sn (doc_issuer_pt_sn)
 --  KEY idx_doc_docno (doc_no),
 --  KEY idx_doc_date (doc_date)
 ) COMMENT='문서 허브: 모든 증빙/서류/파일을 단일 테이블로 저장. 업무/재무/물류 엔티티와의 연결은 document_links로만 표현(엔티티별 문서 테이블 금지).';

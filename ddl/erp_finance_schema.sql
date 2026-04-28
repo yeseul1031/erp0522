@@ -274,11 +274,26 @@ CREATE TABLE receipts (
 CREATE TABLE costs (
   ct_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 PK',
   ct_type ENUM('PROJECT','OL','PO') NOT NULL COMMENT '비용 출처(ENUM) | PROJECT(프로젝트의 부대비용), OL(OL/OLO에 붙은 비용일때), PO(발주서 지급 비용)',
-  ct_kind ENUM('PRODUCT','MATERIAL','SHIPPING','CUSTOMS','SERVICE','OTHER')
-    NOT NULL COMMENT '비용 유형(ENUM) | PRODUCT:상품구매, MATERIAL:자재구매, SHIPPING:배송/운송, CUSTOMS:통관비, SERVICE:용역/수수료, OTHER:기타',
+  ct_kind ENUM('PO_COST', 'LOGISTICS','HANDLING_EQUIPMENT','PROCESSING','LABOR_SERVICE','QUALITY_TEST','TAX_FINANCE','SITE_WORK', 'GENERAL_EXPENSE', 'ADDITIONAL_DELIVERY')
+    NOT NULL COMMENT 'LOGISTICS(물류/운송비), HANDLING_EQUIPMENT(하역/장비비), PROCESSING(가공/제조/외주비), LABOR_SERVICE(인건비/용역비), QUALITY_TEST(시험/품질/인증비), TAX_FINANCE(통관/세금/금융비), SITE_WORK(현장/공사/설치비), GENERAL_EXPENSE(일반경비/운영비), ADDITIONAL_DELIVERY(추가 납품-계약외)',
+/*
+ | ENUM 코드 | 한글명      | 의미 |
+|---|----------|---|
+| `PO_COST` | 발주비   | 발주 비용 |
+| `LOGISTICS` | 물류/운송비   | 물품 이동, 운반, 배송, 관련 비용 |
+| `HANDLING_EQUIPMENT` | 하역/장비비   | 하역, 장비 투입 관련 비용 |
+| `PROCESSING` | 가공/제조/외주비 | 제품 또는 자재를 제작·변형·가공하기 위해 발생한 비용 |
+| `LABOR_SERVICE` | 인건비/용역비  | 사람의 작업, 노무, 공임, 용역 제공으로 발생한 비용 |
+| `QUALITY_TEST` | 시험/품질/인증비 | 시험, 검사, 성적서, 검교정, 품질보증 관련 비용 |
+| `TAX_FINANCE` | 통관/세금/금융비 | 관세, 부가세, 통관, 송금, 보증보험 등 세금·금융 관련 비용 |
+| `SITE_WORK` | 현장/공사/설치비 | 납품 현장, 설치, 철거, 폐기물 처리, 현장 공사 관련 비용 |
+| `GENERAL_EXPENSE` | 일반경비/운영비 | 특정 원가 성격으로 분류하기 어려운 일반 운영성 비용 |
+| `ADDITIONAL_DELIVERY` | 추가 납품 (계약외) | 납품 과정에서 비정형적으로 추가 제공되는 물품 비용 |
+ */
   ct_pt_sn BIGINT UNSIGNED NULL COMMENT '지출 대상 업체 PK(parties)',
   ct_occurred_at DATETIME NOT NULL COMMENT '지출 발생일시(업무 이벤트)',
-  ct_amount DECIMAL(18,2) NOT NULL COMMENT '비용 금액',
+  ct_price DECIMAL(18,2) NOT NULL COMMENT '비용 금액(세금제외)',
+  ct_tax DECIMAL(18,2) NOT NULL COMMENT '비용 세금 부분',
   ct_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
   ct_note VARCHAR(500) NULL COMMENT '비용 설명',
   ct_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
