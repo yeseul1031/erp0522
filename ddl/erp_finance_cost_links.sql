@@ -53,6 +53,7 @@ CREATE TABLE project_cost_links (
 -- ======================================================================
 CREATE TABLE order_line_cost_links (
   olcl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'OrderLine-Cost 연결 PK',
+  p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects.p_sn)', -- 비용-프로젝트 연결 FK (UI에서 프로젝트 단위로 비용 조회/집계 편의를 위해)
   ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문항목 PK(order_lines.ol_sn)',
   ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs.ct_sn)',
 

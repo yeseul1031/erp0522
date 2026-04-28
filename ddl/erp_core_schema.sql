@@ -186,7 +186,6 @@ CREATE TABLE goods (
   g_unit VARCHAR(16) NULL COMMENT '물품 단위(예: EA, 개, 톤 등)',
   g_average_price INT NOT NULL DEFAULT 0 COMMENT '평단가 (부가세 제외 금액, 해외는 포함된 금액)',
   g_stock INT NOT NULL DEFAULT 0 COMMENT 'IO/IOL(및 IU state 변화)에 의해 트랜잭션으로 항상 최신화되는 현재잔고(balance)',
-  g_tags VARCHAR(256) NULL COMMENT '태그들',
   g_spec TEXT NOT NULL COMMENT '규격/옵션 TEXT',
   g_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',
   g_applicable_spec VARCHAR(128) NULL COMMENT '적용 규격/참조',

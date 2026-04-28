@@ -870,7 +870,6 @@ CREATE TABLE rfqs (
 
 --  rfq_req_pub_note VARCHAR(500) NULL COMMENT 'RFQ 요청 메모(견적기안과 별개의 추가로 개별 업체 전달용이 필요할때)',
   rfq_res_pub_note VARCHAR(500) NULL COMMENT 'RFQ 응답 메모(업체가 보낸 코멘트)',
-  rfq_res_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '응답받은 세금 처리 종류, 기본은 rfqp.tax_type을 넣기| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
   rfq_note VARCHAR(500) NULL COMMENT 'RFQ 메모(내부 전용)',
 
   rfq_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -900,7 +899,8 @@ CREATE TABLE rfq_lines (
   /* 견적응답정보 */
   rfql_res_qty DECIMAL(14,3) NOT NULL DEFAULT 0 COMMENT '(견적응답) 수량',
   rfql_res_unit VARCHAR(20) NOT NULL DEFAULT '' COMMENT '(견적응답) 단위(예: EA, SET)',
-  rfql_res_unit_price DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '(견적응답) 견적받은 단가',
+  rfql_res_unit_price DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '(견적응답) 견적받은 단가 (세금 제외)',
+  rfql_res_tax_price DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '(견적응답) 견적받은 단가 세금 부분',
   rfql_res_note VARCHAR(500) NULL COMMENT '(견적응답) 대체품, 최소구매수량 등의 기타 정보는 여기에 기입하기',
 
   rfql_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -958,6 +958,7 @@ CREATE TABLE rfqp_allocations (
 CREATE TABLE purchase_orders (
 
   po_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '발주서 PK - 국내/해외 공용',
+  po_name VARCHAR(128) NOT NULL COMMENT '발주서 소유주가 임의로 텍스트 넣기',
 
   /* 수급 케이스 연결 */
 --  po_primary_sc_sn BIGINT UNSIGNED NULL COMMENT '대표 수급 케이스 PK(sourcing_cases) | 단독 진행이면 설정, 혼합이면 NULL 가능',
@@ -1067,9 +1068,11 @@ CREATE TABLE po_lines (
   pol_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',
 
   pol_qty DECIMAL(14,3) NOT NULL COMMENT '발주 수량(MOQ 등으로 더 클 수 있음)',
+  pol_unit VARCHAR(20) NOT NULL DEFAULT '' COMMENT '단위(예: EA, SET)',
 
   /* 가격/통화(해외 포함) */
-  pol_unit_cost DECIMAL(18,2) NULL COMMENT '발주 단가(확정값)',
+  pol_unit_price DECIMAL(18,2) NULL COMMENT '발주 단가(확정값, 세금 제외)',
+  pol_tax_price DECIMAL(18,2) NULL COMMENT '발주 세금(확정값)',
   pol_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '발주 통화(예: KRW, USD)',
 
   pol_note VARCHAR(500) NULL COMMENT '라인 특이사항/요청사항(업체 전달용)',

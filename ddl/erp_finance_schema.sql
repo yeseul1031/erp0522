@@ -273,7 +273,8 @@ CREATE TABLE receipts (
 -- ======================================================================
 CREATE TABLE costs (
   ct_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 PK',
-  ct_type ENUM('PRODUCT','MATERIAL','SHIPPING','CUSTOMS','SERVICE','OTHER')
+  ct_type ENUM('PROJECT','OL','PO') NOT NULL COMMENT '비용 출처(ENUM) | PROJECT(프로젝트의 부대비용), OL(OL/OLO에 붙은 비용일때), PO(발주서 지급 비용)',
+  ct_kind ENUM('PRODUCT','MATERIAL','SHIPPING','CUSTOMS','SERVICE','OTHER')
     NOT NULL COMMENT '비용 유형(ENUM) | PRODUCT:상품구매, MATERIAL:자재구매, SHIPPING:배송/운송, CUSTOMS:통관비, SERVICE:용역/수수료, OTHER:기타',
   ct_pt_sn BIGINT UNSIGNED NULL COMMENT '지출 대상 업체 PK(parties)',
   ct_occurred_at DATETIME NOT NULL COMMENT '지출 발생일시(업무 이벤트)',
@@ -281,6 +282,8 @@ CREATE TABLE costs (
   ct_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
   ct_note VARCHAR(500) NULL COMMENT '비용 설명',
   ct_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
+  ct_status ENUM('CREATE', 'CANCEL', 'REFUND') NOT NULL DEFAULT 'CREATE' COMMENT '비용 상태(ENUM) | CREATE:생성, CANCEL:취소(payable까지 생성 안되고 그냥 삭제시 조용히 쓱싹), REFUND:환불/차감',
+  ct_parent_ct_sn BIGINT UNSIGNED NULL COMMENT '취소, 부분환불 등으로 생성시 부모 비용 PK',
   ct_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ct_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ct_sn),
