@@ -1009,9 +1009,6 @@ CREATE TABLE purchase_orders (
 
   /* 서비스 UI를 위한 캐시 필드들 - pol이 추가될때마다 업데이트 하면됨. 아래 po_default_p_sn 값과 다를때 날짜를 비교해서 더 빠르면 교체하면 됨 */
   po_default_p_sn BIGINT UNSIGNED NULL COMMENT '서비스 UI를 위한 캐시 필드들 - pol이 추가될때마다 업데이트 하면됨. 아래 po_default_p_sn 값과 다를때 날짜를 비교해서 더 빠르면 교체하면 됨',
-  po_default_p_delivery_dt DATETIME NULL COMMENT '서비스 UI를 위한 캐시 필드들, 납기일',
-  po_default_p_name VARCHAR(128) NULL COMMENT '서비스 UI를 위한 캐시 필드들, 계약업체명',
-  po_default_site_name VARCHAR(100) NULL COMMENT '서비스 UI를 위한 캐시 필드들, 납품처(현장명)',
 
   po_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   po_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
