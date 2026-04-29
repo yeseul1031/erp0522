@@ -83,7 +83,7 @@ create table configurations
     cfg_created_dt datetime default current_timestamp not null,
     cfg_updated_dt datetime default current_timestamp not null on update current_timestamp
 )
-    comment '사업마다의 각종 설정 정보들을 기록한다. (권한은 foundation_db.users에서 공통 관리)';
+    comment '사업마다의 각종 설정 정보들을 기록한다. (권한은 foundation_db.users에서 공통 관리)' AUTO_INCREMENT=100;
 
 create unique index uk_cfg_biz_key
     on configurations (cfg_biz_id, cfg_key);
@@ -103,8 +103,7 @@ CREATE TABLE departments (
   d_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (d_sn),
   UNIQUE KEY uk_departments_name (d_name)
-) COMMENT='부서(조직 단위)';
-
+) COMMENT='부서(조직 단위)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: assignees
@@ -124,7 +123,7 @@ CREATE TABLE assignees (
   KEY idx_assignees_email (a_email),
   CONSTRAINT fk_assignees_departments
     FOREIGN KEY (a_d_sn) REFERENCES departments(d_sn)
-) COMMENT='업무 담당자(직원/협업 담당자 공용)';
+) COMMENT='업무 담당자(직원/협업 담당자 공용)' AUTO_INCREMENT=100;
 
 ALTER TABLE departments
   ADD CONSTRAINT fk_departments_manager
@@ -171,8 +170,7 @@ CREATE TABLE parties (
   pt_is_batch_payment enum('Y', 'N') default 'N' comment '재무요청에 따른 정기결제 업체 여부, payable에도 정기결제건인지 표시 필요',
   PRIMARY KEY (pt_sn),
   KEY idx_parties_pt_name (pt_name)
-) COMMENT='업체/기관(고객사/공급사/물류/중개 등)';
-
+) COMMENT='업체/기관(고객사/공급사/물류/중개 등)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: goods
@@ -200,8 +198,7 @@ CREATE TABLE goods (
   PRIMARY KEY (g_sn),
   KEY idx_goods_name (g_name),
   KEY idx_goods_manufacturer_name (g_manufacturer_name)
-) COMMENT='기성상품(재사용 카탈로그/품목 마스터)';
-
+) COMMENT='기성상품(재사용 카탈로그/품목 마스터)' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
@@ -223,7 +220,7 @@ CREATE TABLE activity_logs (
   KEY idx_activity_logs_target (al_target_table, al_target_pk),
   CONSTRAINT fk_activity_logs_actor
     FOREIGN KEY (al_actor_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='행위 로그(요약)';
+) COMMENT='행위 로그(요약)' AUTO_INCREMENT=100;
 
 -- 이건 나중에 projects 생성하고 넣기
 ALTER TABLE activity_logs
@@ -249,8 +246,7 @@ CREATE TABLE audit_changes (
   KEY idx_audit_changes_target (ac_target_table, ac_target_pk),
   CONSTRAINT fk_audit_changes_activity
     FOREIGN KEY (ac_al_sn) REFERENCES activity_logs(al_sn)
-) COMMENT='변경 상세(diff/스냅샷)';
-
+) COMMENT='변경 상세(diff/스냅샷)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- DOCUMENTS HUB
@@ -291,10 +287,15 @@ Balhea ERP - Documents Hub (documents + document_links) Extension v7.8.2
 
 */
 
-/* 문서 허브: 모든 파일/서류는 여기로 수집 */
+/* 문서 허브:
+ * - 모든 파일/서류 원본은 documents에 1회 저장한다.
+ * - 문서가 어떤 업무 엔티티의 근거/증빙/참고인지 document_links로 연결한다.
+ * - documents나 각 업무 테이블에 대상별 FK를 계속 추가하지 않음으로써
+ *   문서 허브와 업무 엔티티의 독립성을 유지한다.
+ */
 CREATE TABLE documents (
   doc_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'PK',
-  doc_category VARCHAR(30) NOT NULL COMMENT '문서 출처 테이블: PROJECTS, ORDER_LINES, ODER_LINE_OVERIDES ... ', -- COST, PAYMENT, INVOICE, PURCHASE, DELIVERY, CUSTOMS, QUALITY, CONTRACT, TAX, SETTLEMENT, REFUND, OTHER',
+  doc_category VARCHAR(30) NOT NULL COMMENT '문서 출처 테이블명(대문자): PROJECTS, ORDER_LINES, ORDER_LINE_OVERRIDES, COSTS, PAYABLES, PAYMENTS, RFQS, PURCHASE_ORDERS 등',
 --  doc_type VARCHAR(40) NOT NULL COMMENT '문서 타입(권장 예시; 확장 가능): CASH_RECEIPT, SELLER_RECEIPT, CARD_APPROVAL, CARD_SLIP, BANK_TRANSFER_RECEIPT, BANK_TRANSFER_PROOF, TAX_INVOICE, STATEMENT, PURCHASE_DETAILS, BL, AWB, PACKING_LIST, CUSTOMS_DOC, DELIVERY_NOTE, DELIVERY_PROOF, SHIPMENT_PROOF, INSPECTION_REPORT, PHOTO, PLATFORM_SETTLEMENT, REFUND_PROOF, OTHER',
 --  doc_issuer_name VARCHAR(120) NULL COMMENT '발행처/제공처(거래처/포워더/관세사/창고/검사기관 등)',
 --  doc_issuer_pt_sn BIGINT UNSIGNED NULL COMMENT 'parties.pt_sn (가능하면)',
@@ -313,13 +314,16 @@ CREATE TABLE documents (
 --  KEY idx_doc_issuer_pt_sn (doc_issuer_pt_sn)
 --  KEY idx_doc_docno (doc_no),
 --  KEY idx_doc_date (doc_date)
-) COMMENT='문서 허브: 모든 증빙/서류/파일을 단일 테이블로 저장. 업무/재무/물류 엔티티와의 연결은 document_links로만 표현(엔티티별 문서 테이블 금지).';
+) COMMENT='문서 허브: 모든 증빙/서류/파일을 단일 테이블로 저장. 업무/재무/물류 엔티티와의 연결은 document_links로만 표현(엔티티별 문서 테이블 금지).' AUTO_INCREMENT=100;
 
-/* 문서 연결: 문서가 어떤 엔티티의 근거/증빙인지 연결(다대다) */
+/* 문서 연결: 문서가 어떤 엔티티의 근거/증빙인지 연결(다대다)
+ * document_links는 열린 연결 구조이다. 문서는 프로젝트, 비용, 지급, 발주, 견적, 배송 등
+ * 여러 대상에 연결될 수 있으므로, documents 본체에 대상별 FK를 두지 않는다.
+ */
 CREATE TABLE IF NOT EXISTS document_links (
   dl_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'PK',
   doc_sn BIGINT UNSIGNED NOT NULL COMMENT 'documents.doc_sn',
-  dl_target_type VARCHAR(30) NOT NULL COMMENT '연결 대상 타입(명확한 테이블명으로 기입하기): PROJECT, CONTRACT, ORDER, ORDER_LINE, SOURCING_CASE, RFQ, PURCHASE_ORDER(PO), PO_LINE, COST, PAYABLE, PAYMENT, INVOICE, DELIVERY, DELIVERY_LINE, SHIPMENT, SHIPMENT_MILESTONE, JOB, JOB_STOP, INVENTORY_UNIT, so on',
+  dl_target_type VARCHAR(30) NOT NULL COMMENT '연결 대상 타입(명확한 테이블명 대문자로 기입하기): PROJECTS, ORDERS, ORDER_LINES, ORDER_LINE_OVERRIDES, SOURCING_CASES, RFQS, PURCHASE_ORDERS, PO_LINES, COSTS, PAYABLES, PAYMENTS 등',
   dl_target_sn BIGINT UNSIGNED NOT NULL COMMENT '연결 대상 PK (type별로 의미)',
   dl_link_role VARCHAR(30) NOT NULL DEFAULT 'EVIDENCE' COMMENT '연결 역할: EVIDENCE(근거), PROOF(완료증빙), REFERENCE(참고), REQUEST(요청서), OUTPUT(산출물)',
   dl_note VARCHAR(255) NULL COMMENT '비고',
@@ -327,7 +331,7 @@ CREATE TABLE IF NOT EXISTS document_links (
   UNIQUE KEY uk_dl_doc_dl_target (doc_sn, dl_target_type, dl_target_sn, dl_link_role),
   KEY idx_dl_dl_target (dl_target_type, dl_target_sn),
   CONSTRAINT fk_dl_doc FOREIGN KEY (doc_sn) REFERENCES documents(doc_sn)
-) COMMENT='문서 ↔ 업무/재무/물류 엔티티 연결(다대다, polymorphic). dl_target_type+dl_target_sn 유효성은 애플리케이션에서 검증.';
+) COMMENT='문서 ↔ 업무/재무/물류 엔티티 연결(다대다, polymorphic). dl_target_type+dl_target_sn 유효성은 애플리케이션에서 검증.' AUTO_INCREMENT=100;
 
 /* 선택: 문서 간 관계(원본/정정/대체/첨부 묶음) */
 CREATE TABLE IF NOT EXISTS document_relations (
@@ -340,4 +344,4 @@ CREATE TABLE IF NOT EXISTS document_relations (
   UNIQUE KEY uk_dr_parent_child (dr_parent_doc_sn, dr_child_doc_sn, dr_relation_type),
   CONSTRAINT fk_dr_parent FOREIGN KEY (dr_parent_doc_sn) REFERENCES documents(doc_sn),
   CONSTRAINT fk_dr_child FOREIGN KEY (dr_child_doc_sn) REFERENCES documents(doc_sn)
-) COMMENT='문서 간 관계(첨부/정정/대체/묶음 등)';
+) COMMENT='문서 간 관계(첨부/정정/대체/묶음 등)' AUTO_INCREMENT=100;

@@ -21,7 +21,7 @@
 - 비용 내용은 cost에 기록
 
 ## D5. procurement_mode 제거
-- sourcing_type으로 개념 통합
+- `sourcing_cases.sc_type`으로 수급 방식 개념 통합
 - 도메인 용어 일관성 확보
 
 ## D6. 조직 권한을 ERP 밖으로 이동
@@ -67,11 +67,14 @@
 - 이유: “직송/미접촉”과 “입고/재고/바코드” 흐름을 동시에 수용하고, 작업/협의 로그를 독립적으로 남기기 위함.
 - 비고: 배송요청(`delivery_requests`)은 협의가 필요할 때만 사용하고, 실행 이력은 항상 `logistics_jobs`로 남긴다.
 
-## ADR-LOGI-0002 비용 링크는 조회 보조이며 정산의 정답은 cost_allocations
+## ADR-LOGI-0002 비용 귀속은 ct_type별 연결/배분 테이블로 관리
 
-- 결정: `po_cost_links`, `shipment_cost_links`, `logistics_job_cost_links`는 조회/분류 보조 연결로 허용한다.
-- 이유: UI/탐색 편의 및 “이 작업/운송에 붙은 비용” 빠른 조회가 필요하다.
-- 정본: 회계/정산/원가 계산의 기준은 **항상 `cost_allocations`** 이다.
+- 결정: `costs.ct_type`은 `PROJECT`, `PO`만 허용한다.
+- 결정: PROJECT 비용은 `project_cost_allocations`로 프로젝트에 배분한다.
+- 결정: PO 비용은 `po_cost_links`로 PO와 1:1 연결한다.
+- 결정: PO 특수 비용 라인은 `po_cost_line_allocations`로 프로젝트에 배분한다.
+- 이유: 비용 원장을 단순하게 유지하면서 프로젝트 비용과 PO 복합 비용의 성격 차이를 분리한다.
+- 정본: ORDER_LINES, ORDER_LINE_OVERRIDES, SOURCING_CASES, SOURCING_CASE_LINES에는 비용을 직접 귀속하지 않는다.
 
 ## ADR-LOGI-0003 RFQ/PO 통합 조회 VIEW 전략 폐지
 
@@ -94,12 +97,27 @@
 
 - 결정: AP 영역에서 `invoices`, `invoice_lines`, `invoice_cost_allocations`, `payable_invoice_allocations`를 제거한다.
 - 결정: `costs`를 모든 비용의 유일한 원천 원장으로 사용한다.
-- 결정: `payables`는 카드/현금이 아닌 계좌이체 건에 한해서, `costs`를 기준으로 생성한다.
-- 결정: 카드/현금 직접 지급은 `payments`로 비용 정산을 기록한다.
+- 결정: `payables`는 costs를 근거로 한 AP 정산 처리 요청으로 사용한다. 지급 요청(`PAYMENT`)과 환불 확인 요청(`REFUND`)은 `pbl_request_type`으로 구분한다.
+- 결정: 카드 직접 지급은 payable 없이 `payments.pay_ct_sn`으로 cost에 직접 연결한다.
+- 결정: 현금은 아직 서비스 기획 전이므로 `payments`에 기록하지 않고 `costs`에만 등록한다.
+- 결정: 계좌이체 지급과 환불 확인은 `payables.pbl_ct_sn` + `payments.pay_pbl_sn`으로 연결한다.
+- 결정: `payments`는 `pay_tx_type`으로 지급 처리 결과(`PAYMENT`)와 환불 확인 결과(`REFUND`)를 구분하며, `pay_status`는 `PROCESSED`/`CANCELLED`만 사용한다.
+- 결정: 여러 cost를 payable 1건으로 묶지 않는다. cost 1건은 여러 payable로 분할 가능하고, payable 1건은 payment 1건으로만 집행한다.
 - 이유:
-  - 업체에서 별도의 지급요청 원장을 운영하지 않는 실제 업무를 반영한다.
   - 동일한 사실을 `costs`와 `invoices`에 이중 기록하는 중복을 제거한다.
-  - 계좌이체 통제는 유지하되, 카드/현금 직접 지급 경로를 단순화할 수 있다.
+  - 계좌이체 통제와 환불 확인 업무 큐는 유지하되, 카드 직접 지급 경로는 단순화할 수 있다.
+
+## ADR-FIN-0004 환불/차감 Cost와 지급 대사
+
+- 결정: 원 cost는 원 비용 발생 사실로 보존하고, 환불/차감은 별도 negative cost로 기록한다.
+- 결정: refund cost는 `ct_parent_ct_sn`으로 원 cost를 참조한다. 원 cost의 환불 여부, 환불액, 순비용은 자식 refund cost 집계로 계산한다.
+- 결정: PO refund cost는 별도 `po_cost_links`를 만들지 않는다. `ct_parent_ct_sn -> 원 PO cost -> po_cost_links`를 따라 PO 귀속을 해석한다.
+- 결정: payment는 실제 주고받은 총액만 기록하고 세전/세금 분리 필드를 두지 않는다.
+- 결정: 세금계산서 지급 대사는 `tax_invoices.ti_total_amount`와 `tax_invoice_payment_allocations.tipa_amount`의 합계를 payment 방향(`pay_tx_type`)에 따라 비교한다.
+- 이유:
+  - 원 비용 발생 사실과 환불/차감 사건을 분리해 원장 이력을 보존한다.
+  - PO 1건 = cost 1건 정책과 `po_cost_links` 1:1 제약을 유지하면서 PO 환불 귀속을 해석할 수 있다.
+  - payment를 세무 구성 정보가 아닌 실제 정산 결과 원장으로 유지한다.
 
 ## ADR-DOM-0001 문서/실물/작업 분리 및 items 금지
 

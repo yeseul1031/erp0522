@@ -39,14 +39,15 @@
 
 ---
 
-## 0-2. docs 파일 고정 목록(정본)
+## 0-2. DB 문서 고정 목록
 
-아래 4개 문서만 정본으로 유지하며, 사용자가 명시적으로 요청하지 않는 이상 파일명 자체는 변경하지 않는다.
+DB 설명 문서는 아래 파일을 기준으로 유지한다. 상세 테이블/컬럼/enum/FK/인덱스의 정본은 항상 `docs/db/ddl/*.sql`이다.
 
-- `docs/operations-guide.md` (HOW: 실무 입력/운영 절차)
-- `docs/design-and-scenarios.md` (WHY/WHAT: 설계 맥락/시나리오)
-- `docs/schema-policy-and-naming.md` (RULES: 정책/네이밍/코드/운영 규칙) ✅ 본 파일
-- `docs/design-decisions-log.md` (DECISIONS INDEX: 결정 요약 + 기각 사유)
+- `docs/database.md` (DB 문서 탐색 지도)
+- `docs/db/docs/schema-policy-and-naming.md` (RULES: 정책/네이밍/작성 규칙) ✅ 본 파일
+- `docs/db/docs/design-guide.md` (WHY/WHAT: 설계 철학과 논리 모델)
+- `docs/db/docs/service-scenarios.md` (HOW: 업무 흐름/입력 시나리오)
+- `docs/db/docs/design-decisions-log.md` (DECISIONS: 결정 요약 + 기각 사유)
 
 ---
 
@@ -156,17 +157,7 @@
 
 ---
 
-## 7. 브릿지 테이블 예외 규칙
-브릿지 성격의 테이블은 다음과 같은 엔티티 명을 가진다.
-- *_links
-- *_allocations
-
-브릿지 성격의 테이블에 있는 FK 들의 네이밍은 아래와 같은 예외 규칙을 가진다.
-- FK 형식:
-  ```
-  {ref}_sn
-  ```
-- 동일 `{ref}` 2개 이상이면 '{role?}_{ref}_sn' 형식으로, role을 필수는 동일
+## 7. (삭제됨) 브릿지 테이블 예외 규칙
 
 ---
 
@@ -216,8 +207,10 @@
 - 버전/날짜/요약은 파일 헤더로 관리한다.
 
 ### 10.2 문서 변경 원칙
-- 설계가 바뀌면 **삭제가 아니라 “현재 기준으로 재서술 + 기각 사유 기록”**을 한다.
-- 문서의 상세(필드 설명/시나리오/결정 사유)는 축약하지 않는다.
+- 설계가 바뀌면 DDL 주석을 먼저 최신화하고, MD는 목적에 맞게 현재 기준으로 재서술한다.
+- 테이블/컬럼/enum/FK/인덱스 상세를 MD에 중복 정본으로 유지하지 않는다.
+- 기각 사유와 중요한 결정은 `design-decisions-log.md`에 남긴다.
+- 과거 병합용 임시 문서는 유지하지 않는다. 필요한 내용은 정본 문서로 이동하고 나머지는 Git 이력에 맡긴다.
 
 ---
 
@@ -240,9 +233,8 @@
 | 업체(정산 주체) | `parties` | `pt` | `pt_sn` |
 | 담당자 | `assignees` | `a` | `a_sn` |
 | 비용 | `costs` | `ct` | `ct_sn` |
-| 비용귀속 | `cost_allocations` | `ca` | `ca_sn` |
-| 지급/결제 | `payments` | `pay` | `pay_sn` |
-| 지급-비용 라인 | `payment_lines` | `pyl` | `pyl_sn` |
+| 프로젝트 비용 배분 | `project_cost_allocations` | `pca` | `pca_sn` |
+| AP 정산 결과 | `payments` | `pay` | `pay_sn` |
 | 문서/증빙 | `documents` | `doc` | `doc_sn` |
 | 문서-엔티티 연결 | `document_links` | `dl` | `dl_sn` |
 | 납품 | `deliveries` | `dv` | `dv_sn` |
@@ -252,12 +244,14 @@
 
 | RFQ(견적요청) | `rfqs` | `rfq` | `rfq_sn` |
 | RFQ 라인 | `rfq_lines` | `rfql` | `rfql_sn` |
-| RFQ 배정(allocations) | `rfq_allocations` | `rfqa` | `rfqa_sn` |
+| RFQ 기안-수급 배정 | `rfqp_allocations` | `rfqpa` | `rfqpa_sn` |
 
 | 발주서(PO) | `purchase_orders` | `po` | `po_sn` |
 | 발주 라인 | `po_lines` | `pol` | `pol_sn` |
 | 발주 배정(allocations) | `po_allocations` | `poa` | `poa_sn` |
 | 발주-비용 연결 | `po_cost_links` | `pcl` | `pcl_sn` |
+| PO 특수 비용 라인 | `po_cost_lines` | `pocl` | `pocl_sn` |
+| PO 특수 비용 배분 | `po_cost_line_allocations` | `pcla` | `pcla_sn` |
 
 | 선적/배송(Shipment) | `shipments` | `sh` | `sh_sn` |
 | 선적 라인 | `shipment_lines` | `shl` | `shl_sn` |
@@ -281,9 +275,7 @@
 
 
 | 거래처 수 계좌 | `bank_accounts` | `bk` | `bk_sn` |
-| 지급대상(Payable) | `payables` | `pbl` | `pbl_sn` |
-| 지급대상-비용 배정 | `payable_cost_allocations` | `pbca` | `pbca_sn` |
-| 지급-지급대상 배정 | `payment_payable_allocations` | `ppa` | `ppa_sn` |
+| AP 정산 처리 요청(Payable) | `payables` | `pbl` | `pbl_sn` |
 
 | 활동 로그 | `activity_logs` | `al` | `al_sn` |
 | 감사 변경 로그 | `audit_changes` | `ac` | `ac_sn` |

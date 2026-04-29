@@ -91,8 +91,7 @@ CREATE TABLE deliveries (
     FOREIGN KEY (dv_p_sn) REFERENCES projects(p_sn),
   CONSTRAINT fk_deliveries_creator
     FOREIGN KEY (dv_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='납품(헤더)';
-
+) COMMENT='납품(헤더)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: delivery_lines
@@ -113,7 +112,7 @@ CREATE TABLE delivery_lines (
     FOREIGN KEY (dvl_dv_sn) REFERENCES deliveries(dv_sn),
   CONSTRAINT fk_delivery_lines_ol
     FOREIGN KEY (dvl_ol_sn) REFERENCES order_lines(ol_sn)
-) COMMENT='납품 라인(주문라인 분할 납품)';
+) COMMENT='납품 라인(주문라인 분할 납품)' AUTO_INCREMENT=100;
 
 /* =======================================================================
  * 물류/납품(실행 레이어)
@@ -154,8 +153,7 @@ CREATE TABLE shipments (
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_shipments_vendor FOREIGN KEY (sh_pt_sn) REFERENCES parties(pt_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT
-) COMMENT='운송/선적(Shipment) - 흐름 단위(국내/해외 공용)';
-
+) COMMENT='운송/선적(Shipment) - 흐름 단위(국내/해외 공용)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: shipment_lines
@@ -178,8 +176,7 @@ CREATE TABLE shipment_lines (
 
   CONSTRAINT fk_shipment_lines_sh FOREIGN KEY (shl_sh_sn) REFERENCES shipments(sh_sn),
   CONSTRAINT fk_shipment_lines_pol FOREIGN KEY (shl_pol_sn) REFERENCES po_lines(pol_sn)
-) COMMENT='운송 라인(Shipment에 포함된 품목/수량)';
-
+) COMMENT='운송 라인(Shipment에 포함된 품목/수량)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: shipment_milestones
@@ -206,8 +203,7 @@ CREATE TABLE shipment_milestones (
   KEY idx_shipment_milestones_occurred (sm_occurred_at),
 
   CONSTRAINT fk_shipment_milestones_sh FOREIGN KEY (sm_sh_sn) REFERENCES shipments(sh_sn)
-) COMMENT='운송 이벤트/마일스톤(추적/증빙) 트래킹 이력 자동 수집이 안되니, 국내 해외 관계 없이 중요한 이벤트나 비용 청구 목적의 기록용으로 쓴다.';
-
+) COMMENT='운송 이벤트/마일스톤(추적/증빙) 트래킹 이력 자동 수집이 안되니, 국내 해외 관계 없이 중요한 이벤트나 비용 청구 목적의 기록용으로 쓴다.' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: inventory_units
@@ -288,8 +284,7 @@ CREATE TABLE inventory_units (
   CONSTRAINT fk_inventory_units_parent FOREIGN KEY (iu_parent_iu_sn) REFERENCES inventory_units(iu_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT
 
-) COMMENT='실물(바코드) 단위 - 회사 통제 하의 인벤토리';
-
+) COMMENT='실물(바코드) 단위 - 회사 통제 하의 인벤토리' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: inventory_operations
@@ -325,8 +320,7 @@ CREATE TABLE inventory_operations
     KEY          idx_inventory_operations_actor (io_a_sn),
     CONSTRAINT fk_inventory_operations_actor
         FOREIGN KEY (io_a_sn) REFERENCES assignees (a_sn)
-) COMMENT='재고 작업(헤더)';
-
+) COMMENT='재고 작업(헤더)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: inventory_operation_lines
@@ -364,8 +358,7 @@ CREATE TABLE inventory_operation_lines
         FOREIGN KEY (iol_g_sn) REFERENCES goods (g_sn),
     CONSTRAINT fk_inventory_operation_lines_iu
         FOREIGN KEY (iol_iu_sn) REFERENCES inventory_units (iu_sn)
-) COMMENT='재고 작업 라인(원장 라인)';
-
+) COMMENT='재고 작업 라인(원장 라인)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: delivery_requests
@@ -402,8 +395,7 @@ CREATE TABLE delivery_requests (
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_delivery_requests_requester FOREIGN KEY (dr_a_sn) REFERENCES assignees(a_sn),
   CONSTRAINT fk_delivery_requests_vendor FOREIGN KEY (dr_pt_sn) REFERENCES parties(pt_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='배송 협의/요청(스케줄 조율/역제안 기록)';
-
+    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='배송 협의/요청(스케줄 조율/역제안 기록)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: delivery_request_lines
@@ -432,8 +424,7 @@ CREATE TABLE delivery_request_lines (
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_delivery_request_lines_iu FOREIGN KEY (drl_iu_sn) REFERENCES inventory_units(iu_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT
-) COMMENT='배송 요청 상세(대상 품목/실물)';
-
+) COMMENT='배송 요청 상세(대상 품목/실물)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: delivery_request_proposals
@@ -469,8 +460,7 @@ CREATE TABLE delivery_request_proposals (
   CONSTRAINT fk_delivery_request_proposals_proposer_a FOREIGN KEY (drp_a_sn) REFERENCES assignees(a_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_delivery_request_proposals_proposer_vendor FOREIGN KEY (drp_pt_sn) REFERENCES parties(pt_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='배송 협의 제안/응답(역제안/수락/거절 이력)';
-
+    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='배송 협의 제안/응답(역제안/수락/거절 이력)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: logistics_jobs
@@ -517,8 +507,7 @@ CREATE TABLE logistics_jobs (
   CONSTRAINT fk_logistics_jobs_dr FOREIGN KEY (lj_dr_sn) REFERENCES delivery_requests(dr_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_logistics_jobs_sh FOREIGN KEY (lj_sh_sn) REFERENCES shipments(sh_sn)
-    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='물류 작업(사람/업체가 수행)';
-
+    ON DELETE SET NULL ON UPDATE RESTRICT) COMMENT='물류 작업(사람/업체가 수행)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: logistics_job_stops
@@ -551,8 +540,7 @@ CREATE TABLE logistics_job_stops (
   KEY idx_logistics_job_stops_type (ljs_stop_type),
 
   CONSTRAINT fk_logistics_job_stops_lj FOREIGN KEY (ljs_lj_sn) REFERENCES logistics_jobs(lj_sn)
-) COMMENT='물류 작업 경유지/정차 지점';
-
+) COMMENT='물류 작업 경유지/정차 지점' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: logistics_job_lines
@@ -581,4 +569,4 @@ CREATE TABLE logistics_job_lines (
     ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT fk_logistics_job_lines_ol FOREIGN KEY (ljl_ol_sn) REFERENCES order_lines(ol_sn)
     ON DELETE SET NULL ON UPDATE RESTRICT
-) COMMENT='물류 작업 상세(대상 실물/품목)';
+) COMMENT='물류 작업 상세(대상 실물/품목)' AUTO_INCREMENT=100;

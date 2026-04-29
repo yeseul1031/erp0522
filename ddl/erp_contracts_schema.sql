@@ -159,8 +159,7 @@ CREATE TABLE projects (
       FOREIGN KEY (p_sn, p_default_o_sn) REFERENCES orders(o_p_sn, o_sn),
   CONSTRAINT fk_projects_manager
     FOREIGN KEY (p_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='프로젝트(=계약)';
-
+) COMMENT='프로젝트(=계약)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: announce_links
@@ -181,7 +180,7 @@ create table announce_links
     constraint announce_links_projects_p_sn_fk
         foreign key (al_p_sn) references projects (p_sn)
 )
-    comment '프로젝트와 공고 도메인과의 연결, 1:1';
+    comment '프로젝트와 공고 도메인과의 연결, 1:1' AUTO_INCREMENT=100;
 
 create unique index announce_links_al_p_sn_al_ba_sn_uindex
     on announce_links (al_p_sn, al_ba_sn);
@@ -210,8 +209,7 @@ CREATE TABLE orders (
   UNIQUE KEY uk_order_p_sn_o_sn (o_p_sn, o_sn),
   CONSTRAINT fk_order_projects
     FOREIGN KEY (o_p_sn) REFERENCES projects(p_sn)
-) COMMENT='주문서';
-
+) COMMENT='주문서' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
@@ -261,8 +259,7 @@ CREATE TABLE blanket_order_lines (
                                      KEY              idx_bol_status (bol_status),
                                      CONSTRAINT fk_bol_orders
                                          FOREIGN KEY (bol_p_sn) REFERENCES projects (p_sn)
-) COMMENT='주문총량(차감식) 계약용 주문라인(고객 요구/납품 약속 단위)';
-
+) COMMENT='주문총량(차감식) 계약용 주문라인(고객 요구/납품 약속 단위)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: blanket_order_line_overrides
@@ -272,8 +269,6 @@ CREATE TABLE blanket_order_lines (
 CREATE TABLE blanket_order_line_overrides (
                                               bolo_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문총량(차감식) 계약용 주문라인 예외(override) PK',
                                               bolo_bol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines)',
-                                              bolo_type ENUM('SPLIT','SUBSTITUTE','ADD_ON','BUNDLE')
-    NOT NULL COMMENT '예외 유형(ENUM) | SPLIT:분할구매, SUBSTITUTE:대체품, ADD_ON:추가구매, BUNDLE:조합구성품',
                                               bolo_item_name VARCHAR(128) NOT NULL COMMENT '(override) 요구 품목명(예: 십자 드라이버)',
                                               bolo_item_spec JSON NULL COMMENT '(override) 요구 규격/조건(자유형 JSON)',
                                               bolo_item_qty DECIMAL(14,3) NOT NULL COMMENT '(override) 요구 수량(납품 약속 수량)',
@@ -287,10 +282,8 @@ CREATE TABLE blanket_order_line_overrides (
                                               bolo_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
                                               PRIMARY KEY (bolo_sn),
                                               KEY idx_bolo_ol (bolo_bol_sn),
-                                              KEY idx_bolo_type (bolo_type),
                                               CONSTRAINT fk_bolo_bol FOREIGN KEY (bolo_bol_sn) REFERENCES blanket_order_lines(bol_sn)
-) COMMENT='주문총량(차감식) 계약용 주문라인 희소 케이스(분할/대체/추가/조합) 지원';
-
+) COMMENT='주문총량(차감식) 계약용 주문라인 희소 케이스(분할/대체/추가/조합) 지원' AUTO_INCREMENT=100;
 
 
 
@@ -361,20 +354,19 @@ CREATE TABLE order_lines (
       FOREIGN KEY (ol_o_sn) REFERENCES orders(o_sn),
   CONSTRAINT fk_order_lines_blanket_order_lines
       FOREIGN KEY (ol_bol_sn) REFERENCES blanket_order_lines(bol_sn)
-) COMMENT='주문라인(고객 요구/납품 약속 단위)';
-
+) COMMENT='주문라인(고객 요구/납품 약속 단위)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: order_line_overrides
 -- DESC : 주문라인 희소 케이스(분할/대체/추가/조합) 지원
 -- NOTE :
--- * - 계약에서는 요구사항에 촛점을 맞추고, g_sn 과 매핑은 실제 수급 영역에서 다룬다.
+-- * - 계약에서는 요구사항에 초점을 맞추고, g_sn 과 매핑은 실제 수급 영역에서 다룬다.
+-- * - BUNDLE은 BOM 정본이 아니라 계약/대외 커뮤니케이션에서 구성품이 고정된 경우의 스냅샷이다.
+-- * - 내부 수급/조립/구매 실행을 위한 구성품 전개는 sourcing_case_lines 이하에서 관리한다.
 -- ======================================================================
 CREATE TABLE order_line_overrides (
   olo_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문라인 예외(override) PK',
   olo_ol_sn BIGINT UNSIGNED NOT NULL COMMENT '주문라인 PK(order_lines)',
-  olo_type ENUM('SPLIT','SUBSTITUTE','ADD_ON','BUNDLE')
-    NOT NULL COMMENT '예외 유형(ENUM) | SPLIT:분할구매, SUBSTITUTE:대체품, ADD_ON:추가구매, BUNDLE:조합구성품',
   olo_item_name VARCHAR(128) NOT NULL COMMENT '(override) 요구 품목명(예: 십자 드라이버)',
   olo_item_spec JSON NULL COMMENT '(override) 요구 규격/조건(자유형 JSON)',
   olo_item_qty DECIMAL(14,3) NOT NULL COMMENT '(override) 요구 수량(납품 약속 수량)',
@@ -387,11 +379,9 @@ CREATE TABLE order_line_overrides (
   olo_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (olo_sn),
   KEY idx_olo_ol (olo_ol_sn),
-  KEY idx_olo_type (olo_type),
   CONSTRAINT fk_olo_ol
     FOREIGN KEY (olo_ol_sn) REFERENCES order_lines(ol_sn)
-) COMMENT='주문라인 희소 케이스(분할/대체/추가/조합) 지원';
-
+) COMMENT='주문라인 희소 케이스(분할/대체/추가/조합) 지원' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
@@ -415,15 +405,16 @@ CREATE TABLE order_line_overrides (
  * - CANCELLED        : 취소
  *
  * FIELD USAGE
- * - sc_owner_a_sn      : '현재 책임자' (OPEN에서는 NULL 가능)
- * - sc_requested_a_sn  : 위임 요청 대상(ASSIGNING에서 사용)
+ * - sc_owner_a_sn      : 이 수급 케이스를 생성하고 소유한 구매 담당자이다. 협업 요청/수락만으로 변경되지 않는다.
+ * - sc_assignee_a_sn   : 현재 수급 수행 담당자이다. SELF_ASSIGNED 상태에서는 owner와 같고, ASSIGNEE_WORKING 상태에서는 협업 요청을 수락한 담당자를 의미한다.
+ * - sc_requested_a_sn  : 협업 요청 대상. ASSIGNING 상태에서 수락/거절 대상을 의미한다.
  * - sc_requested_at    : 요청 시각
  * - sc_accepted_at     : 수락 시각
  * - sc_rejected_at     : 거절 시각
  * - 상세 액션 이력은 audit/activity_logs로 남긴다(별도 이벤트 테이블 신설 없음).
  *
  * EXECUTION & QUANTITY INTERPRETATION
- * - sc_required_qty는 '목표/참조 수량'이며, 실행/진행 수량은 rfq_allocations / po_allocations 합계로 관찰한다.
+ * - sc_required_qty는 '목표/참조 수량'이며, 실행/진행 수량은 rfqp_allocations / po_allocations 합계로 관찰한다.
  * - 실행 합계는 목표와 일치하지 않을 수 있으며, 이는 정상 케이스다:
  *   - 유실/파손 대비 여분 구매
  *   - 샘플 구매(납품 제외)
@@ -441,7 +432,7 @@ CREATE TABLE sourcing_cases (
   sc_required_qty DECIMAL(14,3) NOT NULL COMMENT '요구된 수급 수량(order_line 의 수량과는 다를 수 있음)',
   sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
     NOT NULL COMMENT '수급 방식(ENUM) | DOMESTIC:국내구매, OVERSEAS:해외구매, IN_HOUSE:자체제작',
-  sc_assignee_a_sn BIGINT UNSIGNED NOT NULL COMMENT '수급 수행 담당자 PK(assignees) | 협업 담당자 또는 프로젝트 담당자',
+  sc_assignee_a_sn BIGINT UNSIGNED NULL COMMENT '현재 수급 수행 담당자 PK(assignees) | 직접 처리 시 owner와 같고, 협업 수락 시 협업 담당자를 의미',
   sc_status ENUM('OPEN', 'SELF_ASSIGNED', 'ASSIGNING', 'ASSIGNEE_WORKING', 'CANCELLED', 'DONE') NOT NULL COMMENT
     '수급 케이스의 현재 처리 상태를 나타내는 코드이다.
     - OPEN               : 담당자 미확정 상태이다. 누구도 인수하지 않았으며, 담당자 지정 대기열에 해당한다.
@@ -450,8 +441,8 @@ CREATE TABLE sourcing_cases (
     - ASSIGNEE_WORKING   : 요청 받은 담당자가 수락하여 실제로 처리 중인 상태이다.
     - CANCELLED          : 케이스가 취소된 상태이다.
     - DONE               : 케이스 처리 완료 상태이다.',
-  sc_owner_a_sn BIGINT UNSIGNED NULL COMMENT
-    '현재 이 수급 케이스를 실제로 처리할 책임(소유권)을 가진 담당자를 식별하는 외래키이다. OPEN 상태에서는 NULL일 수 있다.',
+  sc_owner_a_sn BIGINT UNSIGNED NOT NULL COMMENT
+    '수급 케이스를 생성하고 소유한 구매 담당자 PK(assignees). 협업 요청/수락만으로 변경되지 않으며, 담당 변경/퇴사 등 소유권 이관 시 갱신된다.',
 
   sc_requested_a_sn BIGINT UNSIGNED NULL COMMENT
     '담당자에게 처리를 요청했을 때, 요청 대상 담당자를 식별하는 외래키이다. sc_status=ASSIGNING일 때 주로 사용된다.',
@@ -478,8 +469,7 @@ CREATE TABLE sourcing_cases (
       FOREIGN KEY (sc_olo_sn) REFERENCES order_line_overrides(olo_sn),
   CONSTRAINT fk_sourcing_cases_assignee
     FOREIGN KEY (sc_assignee_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='수급 케이스(주문라인 단위 공통 컨테이너)';
-
+) COMMENT='수급 케이스(주문라인 단위 공통 컨테이너)' AUTO_INCREMENT=100;
 
 /* =============================================================================
 -- TABLE: sourcing_case_lines
@@ -627,8 +617,7 @@ CREATE TABLE sourcing_case_lines (
 
   CONSTRAINT fk_scl_parent
     FOREIGN KEY (scl_parent_scl_sn) REFERENCES sourcing_case_lines(scl_sn)
-) COMMENT='수급 조달 라인(정본). RFQ/PO는 본 라인을 참조하여 요청한다(유추 금지).';
-
+) COMMENT='수급 조달 라인(정본). RFQ/PO는 본 라인을 참조하여 요청한다(유추 금지).' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: domestic_cases
@@ -646,8 +635,7 @@ CREATE TABLE domestic_cases (
   KEY idx_domestic_cases_sc_sn (dc_sc_sn),
   CONSTRAINT fk_domestic_cases_sc
     FOREIGN KEY (dc_sc_sn) REFERENCES sourcing_cases(sc_sn)
-) COMMENT='국내 수급 케이스(시도 인스턴스)';
-
+) COMMENT='국내 수급 케이스(시도 인스턴스)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: overseas_cases
@@ -667,8 +655,7 @@ CREATE TABLE overseas_cases (
   KEY idx_overseas_cases_sc (oc_sc_sn),
   CONSTRAINT fk_overseas_cases_sc
     FOREIGN KEY (oc_sc_sn) REFERENCES sourcing_cases(sc_sn)
-) COMMENT='해외 수급 케이스(시도 인스턴스)';
-
+) COMMENT='해외 수급 케이스(시도 인스턴스)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: inhouse_cases
@@ -689,8 +676,7 @@ CREATE TABLE inhouse_cases (
   KEY idx_inhouse_cases_sc (ic_sc_sn),
   CONSTRAINT fk_inhouse_cases_sc
     FOREIGN KEY (ic_sc_sn) REFERENCES sourcing_cases(sc_sn)
-) COMMENT='자체제작 케이스(시도 인스턴스)';
-
+) COMMENT='자체제작 케이스(시도 인스턴스)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: inhouse_bom_lines
@@ -712,8 +698,7 @@ CREATE TABLE inhouse_bom_lines (
   KEY idx_inhouse_bom_ic (ibl_ic_sn),
   CONSTRAINT fk_inhouse_bom_ic
     FOREIGN KEY (ibl_ic_sn) REFERENCES inhouse_cases(ic_sn)
-) COMMENT='자체제작 BOM(자재 소요)';
-
+) COMMENT='자체제작 BOM(자재 소요)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: inhouse_work_orders
@@ -735,8 +720,7 @@ CREATE TABLE inhouse_work_orders (
   KEY idx_inhouse_work_orders_status (iwo_status),
   CONSTRAINT fk_inhouse_work_orders_ic
     FOREIGN KEY (iwo_ic_sn) REFERENCES inhouse_cases(ic_sn)
-) COMMENT='자체제작 작업지시/공정';
-
+) COMMENT='자체제작 작업지시/공정' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: rfq_plans (rfqp)
@@ -756,6 +740,7 @@ CREATE TABLE rfq_plans (
     rfqp_a_sn BIGINT UNSIGNED NOT NULL COMMENT 'ASSIGNEE PK',
     rfqp_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '세금 처리 종류| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
     rfqp_req_note VARCHAR(500) NOT NULL COMMENT '업체 전달용 비고/요청사항',
+    rfqp_note VARCHAR(500) NOT NULL COMMENT '내부용 비고',
     rfqp_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
     rfqp_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
@@ -765,14 +750,17 @@ CREATE TABLE rfq_plans (
     KEY idx_rfqp_visible (rfqp_a_sn, rfqp_visible),
 
     CONSTRAINT fk_rfqp_a FOREIGN KEY (rfqp_a_sn) REFERENCES assignees(a_sn)
-) COMMENT '견적기안(견적요청서 계획 마스터)';
-
+) COMMENT '견적기안(견적요청서 계획 마스터)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: rfqp_lines (rfqpl)
 -- DESC : 견적기안 항목들
--- NOTE : rfq_plans의 각 항목으로, 어떤 품목을 어떤 수량으로 견적 낼지 계획하는 영역이다. rfq_plans와 1:N 관계이다. rfq_plans에서 '전개'를 할 때, 이 테이블의 각 항목이 rfq_lines로 복사되어서 실제 견적 요청에 사용된다.
+-- NOTE : rfq_plans의 각 항목으로, 어떤 품목을 어떤 수량으로 견적 낼지 계획하는 영역이다. rfq_plans와 1:N 관계이다. rfq_plans에서 '전개'를 할 때, 이 테이블의 각 항목을 기준으로 업체별 rfq_lines 응답 슬롯이 생성된다.
+--        rfq_lines는 요청 품목 정보를 복사해 보존하는 스냅샷 테이블이 아니다. 업체가 웹에서 확인하는 요청 품목/규격/수량 정보는 rfqp_lines의 현재 값을 참조해 표시한다.
+--        견적서는 계약서가 아니며 가격/공급 가능성 확인을 위한 업무 문서이다. 실제 계약적 정본은 purchase_orders/po_lines이다.
+--        따라서 견적 요청 내용과 업체 응답 사이에 발생할 수 있는 약간의 불일치는 운영상 감수하고, 최종 계약/구매 값은 PO에서 확정한다.
 -- 견적기안은 각 SCL 수량의 합이다. 최소구매수량 같은 조정은 발주서에서 진행한다. 여기선 납품 기준 수량 계획과 단가 계획만 한다.
+-- NOTE : rfq_plans/rfqp_lines는 내부 견적기안이며, rfqs/rfq_lines는 특정 업체에게 실제 발송되거나 회신 받은 견적 요청/응답이다.
 -- ======================================================================
 CREATE TABLE rfqp_lines (
     rfqpl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ Plan Line PK(견적기안 항목)',
@@ -810,8 +798,7 @@ CREATE TABLE rfqp_lines (
     CONSTRAINT fk_rfqpl_rfqp FOREIGN KEY (rfqpl_rfqp_sn) REFERENCES rfq_plans(rfqp_sn),
     CONSTRAINT fk_rfqpl_g FOREIGN KEY (rfqpl_g_sn) REFERENCES goods(g_sn)
 
-) COMMENT '견적기안 항목들';
-
+) COMMENT '견적기안 항목들' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: rfqp_vendors (rfqpv)
@@ -836,12 +823,13 @@ CREATE TABLE rfqp_vendors
     CONSTRAINT fk_rfqpv_rfqp FOREIGN KEY (rfqpv_rfqp_sn) REFERENCES rfq_plans(rfqp_sn),
     CONSTRAINT fk_rfqpv_pt FOREIGN KEY (rfqpv_pt_sn) REFERENCES parties(pt_sn)
 
-) COMMENT '견적대상업체';
-
+) COMMENT '견적대상업체' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: rfqs
 -- DESC : RFQ(견적요청서) 헤더 - 국내/해외 통합
+-- NOTE : rfqs는 견적기안(rfq_plans)에서 특정 업체별로 생성된 실제 견적 요청/회신 컨테이너이다.
+--        업체별 회신 가격, 세금, 공급 가능 여부, 대체품 제안은 rfq_lines에 기록한다.
 -- ======================================================================
 CREATE TABLE rfqs (
   rfq_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ PK(견적요청서) - 국내/해외 공용',
@@ -868,7 +856,7 @@ CREATE TABLE rfqs (
   rfq_replied_at DATETIME NULL COMMENT '회신일시(업무 이벤트)',
 --  rfq_reply_lead_time_days INT NULL COMMENT '회신 납기(리드타임) 일수(선택)',
 
---  rfq_req_pub_note VARCHAR(500) NULL COMMENT 'RFQ 요청 메모(견적기안과 별개의 추가로 개별 업체 전달용이 필요할때)',
+  rfq_req_pub_note VARCHAR(500) NULL COMMENT 'RFQ 요청 메모(견적기안과 별개의 추가로 개별 업체 전달용이 필요할때)',
   rfq_res_pub_note VARCHAR(500) NULL COMMENT 'RFQ 응답 메모(업체가 보낸 코멘트)',
   rfq_note VARCHAR(500) NULL COMMENT 'RFQ 메모(내부 전용)',
 
@@ -882,12 +870,16 @@ CREATE TABLE rfqs (
 
   CONSTRAINT fk_rfqs_vendor FOREIGN KEY (rfq_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_rfqs_creator FOREIGN KEY (rfq_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='RFQ(견적요청서) 헤더 - 국내/해외 통합';
-
+) COMMENT='RFQ(견적요청서) 헤더 - 국내/해외 통합' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: rfq_lines
--- DESC : RFQ 라인(견적 요청과 그 응답을 같이 기록하기록 정책 결정) - 국내/해외 통합
+-- DESC : RFQ 라인(업체별 응답 슬롯) - 국내/해외 통합
+-- NOTE : rfq_lines는 업체가 입력할 수 있는 응답 필드만 보유한다.
+--        요청 품목/규격/수량/단위 등 제품 정보는 rfqp_lines를 참조해 표시하며, rfqp_lines가 수정되면 업체 화면에도 즉시 반영된다.
+--        따라서 rfq_lines는 "요청 스냅샷"이 아니라 "특정 업체 RFQ에서 특정 rfqp_line에 대한 응답값"이다.
+--        견적 단계의 값은 계약 정본이 아니며, 최종 수량/단가/세금/통화/납기는 PO 라인에서 확정한다.
+--        과거 특정 시점에 업체가 본 요청서를 재현해야 하면, 발송 문서/PDF 등을 documents + document_links로 보존한다.
 -- ======================================================================
 CREATE TABLE rfq_lines (
   rfql_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 PK(업체에 보낸 실제 1줄) - 국내/해외 공용',
@@ -910,8 +902,7 @@ CREATE TABLE rfq_lines (
   UNIQUE KEY uk_rfq_lines (rfql_rfq_sn, rfql_rfqpl_sn),
   CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfql_rfq_sn) REFERENCES rfqs(rfq_sn),
   CONSTRAINT fk_rfq_lines_rfqpl FOREIGN KEY (rfql_rfqpl_sn) REFERENCES rfqp_lines(rfqpl_sn)
-) COMMENT='RFQ 라인(요청 1줄 + 회신 값(reply_*), 덮어쓰기 정책) - 국내/해외 통합';
-
+) COMMENT='RFQ 라인(업체별 응답 슬롯). 요청 정보는 rfqp_lines를 참조하고, 본 테이블은 업체 응답값만 보유한다.' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: rfqp_allocations
@@ -947,13 +938,14 @@ CREATE TABLE rfqp_allocations (
   CONSTRAINT fk_rfqp_alloc_rfql FOREIGN KEY (rfqpl_sn) REFERENCES rfqp_lines(rfqpl_sn),
   CONSTRAINT fk_rfqp_alloc_sc   FOREIGN KEY (sc_sn)   REFERENCES sourcing_cases(sc_sn),
   CONSTRAINT fk_rfqp_alloc_scl  FOREIGN KEY (scl_sn)  REFERENCES sourcing_case_lines(scl_sn)
-) COMMENT='RFQ 라인 ↔ 수급 실행 라인 배분(sc/rfq 캐시 포함, 실행 기준은 scl)';
-
+) COMMENT='RFQ 라인 ↔ 수급 실행 라인 배분(sc/rfq 캐시 포함, 실행 기준은 scl)' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
 -- TABLE: purchase_orders
 -- DESC : 발주서(PO) 헤더 - 국내/해외 통합
+-- NOTE : purchase_orders/po_lines는 실제 업체에게 전달한 구매 실행 문서와 라인이다.
+--        최종 구매 실행 값(수량/단가/통화/샘플 여부)은 order_lines가 아니라 po_lines를 기준으로 해석한다.
 -- ======================================================================
 CREATE TABLE purchase_orders (
 
@@ -962,8 +954,7 @@ CREATE TABLE purchase_orders (
 
   /* 수급 케이스 연결 */
 --  po_primary_sc_sn BIGINT UNSIGNED NULL COMMENT '대표 수급 케이스 PK(sourcing_cases) | 단독 진행이면 설정, 혼합이면 NULL 가능',
--- 혹시 나중에 수급방식 필드가 필요할지도 모르겠는데, 그때 추가하자.
---  po_sourcing_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE','SERVICE') NULL COMMENT '수급 방식(ENUM) | 헤더 편의/필터용(선택)',
+-- 현재 DDL에서는 PO 헤더에 수급 방식 캐시 컬럼을 두지 않는다. 수급 방식의 정본은 sourcing_cases.sc_type이다.
 
   /* 업체/작성자 */
   po_vendor_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '대상 업체 PK(parties)',
@@ -1020,8 +1011,7 @@ CREATE TABLE purchase_orders (
   CONSTRAINT fk_pos_creator FOREIGN KEY (po_a_sn) REFERENCES assignees(a_sn),
   CONSTRAINT fk_pos_source_rfq FOREIGN KEY (po_source_rfq_sn) REFERENCES rfqs(rfq_sn)
 
-) COMMENT='발주서(PO) 헤더 - 국내/해외 통합';
-
+) COMMENT='발주서(PO) 헤더 - 국내/해외 통합' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: project_purcharse_order_links
@@ -1038,8 +1028,7 @@ CREATE TABLE project_purchase_order_links (
     UNIQUE KEY uk_project_po (ppol_p_sn, ppol_po_sn),
     CONSTRAINT fk_ppol_project FOREIGN KEY (ppol_p_sn) REFERENCES projects(p_sn),
     CONSTRAINT fk_ppol_po FOREIGN KEY (ppol_po_sn) REFERENCES purchase_orders(po_sn)
-) COMMENT '프로젝트와 발주서 연결 테이블 (편의용)';
-
+) COMMENT '프로젝트와 발주서 연결 테이블 (편의용)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: po_lines
@@ -1093,8 +1082,7 @@ CREATE TABLE po_lines (
   KEY idx_po_lines_source_rfql (source_rfql_sn),
   CONSTRAINT fk_po_lines_po FOREIGN KEY (pol_po_sn) REFERENCES purchase_orders(po_sn),
   CONSTRAINT fk_po_lines_source_rfql FOREIGN KEY (source_rfql_sn) REFERENCES rfq_lines(rfql_sn)
-) COMMENT='발주서 라인(PO 한줄) - 국내/해외 통합';
-
+) COMMENT='발주서 라인(PO 한줄) - 국내/해외 통합' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
@@ -1117,14 +1105,14 @@ CREATE TABLE po_cost_lines (
   PRIMARY KEY (pocl_sn),
   KEY idx_pocl_po (pocl_po_sn),
   CONSTRAINT fk_pocl_po FOREIGN KEY (pocl_po_sn) REFERENCES purchase_orders(po_sn)
-) COMMENT '발주 특수 비용 항목들';
-
+) COMMENT '발주 특수 비용 항목들' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
 -- TABLE: po_allocations
 -- DESC : 발주 라인 배분(여러 sc 혼합 PO 지원) - 국내/해외 통합
 -- NOTE : allocated_qty(및 합계)는 sc_required_qty(목표/참조)와 불일치할 수 있음(정상). 해석 기준은 sourcing_cases(Execution & Quantity Interpretation).
+-- NOTE : po_allocations는 PO 라인이 어떤 sourcing_case_lines를 얼마나 커버하는지 기록하는 실행 귀속 테이블이다.
 -- ======================================================================
 CREATE TABLE po_allocations (
   poa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PO 라인 배분 PK (실행 라인 기준)',
@@ -1162,5 +1150,4 @@ CREATE TABLE po_allocations (
   CONSTRAINT fk_po_alloc_sc  FOREIGN KEY (sc_sn)  REFERENCES sourcing_cases(sc_sn),
   CONSTRAINT fk_po_alloc_scl FOREIGN KEY (scl_sn) REFERENCES sourcing_case_lines(scl_sn),
   CONSTRAINT fk_po_alloc_p   FOREIGN KEY (p_sn)   REFERENCES projects(p_sn)
-) COMMENT='PO 라인 ↔ 수급 실행 라인 배분(sc/po 캐시 포함, 실행 기준은 scl)';
-
+) COMMENT='PO 라인 ↔ 수급 실행 라인 배분(sc/po 캐시 포함, 실행 기준은 scl)' AUTO_INCREMENT=100;

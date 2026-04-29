@@ -1,410 +1,271 @@
-# Balhea ERP Design Guide (Canon v7.9.x)
+# Balhea ERP Design Guide
 
-> 목적: 스키마 “생성 규칙/네이밍”이 아니라, **서비스·업무 관점에서의 설계 의도 / 논리 모델 / 사용 규칙**을 설명한다.  
-> 입력 예시(레코드 단위)는 `service-scenarios.md`로 분리한다.
-
----
-
-## 1. 설계 철학(Why)
-
-### 1.1 프로젝트 중심(Project-centric)
-Balhea ERP의 최상위 단위는 **프로젝트(projects)** 다.
-
-- 모든 비용(cost)은 프로젝트에 귀속/집계 가능해야 한다.
-- 모든 책임/담당(assignee)은 프로젝트 기준으로 정의된다.
-- 담당자 변경은 프로젝트/라인의 담당자 참조만 수정하면 된다.
-
-> “조직(부서)·직원(인사) 데이터”는 ERP의 정체성이 아니라 외부 맥락이다.
-
-### 1.2 조직/직원 정보를 ERP에 저장하지 않는 이유
-- 직원/조직 정보는 그룹웨어(또는 HR 시스템)가 단일 진실 소스(SSOT)다.
-- ERP에 조직 정보를 복제하면 동기화/정합성 문제가 발생한다.
-- ERP는 “업무 사실(fact)”을 기록한다.
-
-따라서 ERP에는 직원 상세정보가 아니라, 외부 시스템의 **principal(식별자)** 만 저장한다
-(예: `..._assignee_principal` 같은 텍스트/식별자 컬럼).
+> 목적: 이 문서는 DDL을 대신 설명하는 컬럼 사전이 아니라, Balhea ERP 데이터 모델을 어떤 관점으로 읽고 운용해야 하는지 정리한 설계 가이드다.
+> 테이블, 컬럼, enum, 제약, 주석의 정본은 항상 `docs/db/ddl/*.sql`이다.
 
 ---
 
-## 2. 핵심 불변식(Core Invariants)
+## 1. 설계 방향
 
-### 2.1 cost ≠ payment ≠ payable
-재무 영역은 “발생/유출/통제”를 분리한다.
+### 1.1 전사 ERP로 확장되는 업무 플랫폼
 
-- **costs**: 모든 비용/원가/채무의 *유일한 발생 원천*
-- **payments**: 현금/자산의 *실제 유출(지급 행위)*
-- **payables**: 카드/현금이 아닌 **계좌이체가 필요한 비용**에 대해서만 생성되는 *선택적 내부 지급요청 단위*
+Balhea ERP는 조달 운영만을 위한 단일 목적 시스템이 아니라, 전사 업무가 단계적으로 들어올 ERP 플랫폼이다.
 
-운영 원칙:
-- 업체의 별도 지급요청 원장은 두지 않는다.
-- 구매 담당자는 `costs`를 기준으로 지급 방식을 결정한다.
-- 카드/현금은 `costs → payments`로 바로 기록한다.
-- 계좌이체는 `costs → payables → payments` 흐름으로 기록한다.
+현재는 조달 업무가 먼저 모델링되어 `projects`, `orders`, `sourcing_cases`, `purchase_orders` 같은 조달 중심 엔티티가 두드러진다. 그러나 finance, logistics, documents, parties 같은 공통 영역은 장기적으로 조달에만 종속되면 안 된다. 다른 사업부나 업무 도메인이 들어오더라도 같은 재무 원장, 지급, 문서, 물류 기반을 재사용할 수 있어야 한다.
 
-이 분리를 통해 아래를 단순하게 지원한다.
-- 분할 지급(선금/중도금/잔금)
-- 카드 즉시결제 vs 계좌이체 승인 프로세스
-- 비용 발생과 실제 지급의 분리
-- 분할 지급(여러 payable 또는 여러 payment)
+따라서 설계의 기준은 “모든 것을 프로젝트에 직접 붙인다”가 아니다. 프로젝트는 현재 조달 도메인의 중요한 집계 축이지만, 전사 ERP 관점에서는 여러 업무 도메인 중 하나의 실행 컨텍스트다. 공통 엔티티는 특정 도메인에 과도하게 묶이지 않고, 필요한 경우 링크/배분/참조 구조를 통해 각 도메인과 연결된다.
 
-### 2.2 Documents Hub: `documents` + `document_links` 단일 정책
-문서/증빙/첨부는 엔티티별 전용 테이블로 쪼개지 않는다.
+### 1.2 ERP는 업무 사실을 기록한다
 
-- 모든 파일 원본은 **`documents`** 에 *단일 저장*
-- 문서가 무엇의 근거인지(비용/지급/배송/작업 등)는 **`document_links`** 로만 연결
-- 동일 문서는 여러 대상에 다대다로 연결 가능(저장은 1회, 링크만 다수)
+ERP는 전사 계정/인사/조직의 정본이 아니다. 전사 계정과 SSO, 인사 정보는 외부 시스템이 정본이고, ERP의 `assignees`는 조달 업무에 필요한 계정 정보를 일부 동기화해 보유한다.
 
-#### 2.2.1 `document_links` 유효성 검증 원칙
-`document_links`는 polymorphic이므로 DB FK로 전부 강제하지 않는다.  
-`target_type + target_sn` 유효성은 애플리케이션에서 검증한다.
+따라서 ERP는 사람의 전체 인사 프로필이 아니라, “이 업무를 누가 소유하고 수행했는가”라는 업무 사실을 기록한다.
 
-권장 분류:
-- 거래/원가 증빙: `documents.doc_category='COST'`
-- 지급/현금흐름 증빙: `documents.doc_category='PAYMENT'`
+### 1.3 DDL 주석이 상세 정책의 정본이다
 
-### 2.3 발주서
-- 발주서(PO 문서)
-  - 비용/지급 ‘증빙’이라기보다 **조달 의사결정/업무 문서**
-  - 가능하면 별도 업무 문서 저장소(예: documents)에 관리 권장
-  - 여건상 documents에 둘 경우, 문서 타입(PO_DOC 등)을 명확히 표시하여 혼선을 방지
+초기 설계 단계에서는 Markdown 문서가 enum과 컬럼 의미를 자세히 설명했지만, 현재는 DDL 주석에 더 구체적인 정책이 들어 있다.
+
+이 문서는 다음을 하지 않는다.
+
+- 컬럼 목록을 반복하지 않는다.
+- enum 코드북을 중복 관리하지 않는다.
+- DDL과 같은 수준의 제약 조건을 재정의하지 않는다.
+
+대신 이 문서는 여러 DDL 파일에 흩어진 의도를 연결해, 전체 모델의 해석 기준을 제공한다.
 
 ---
 
-## 3. 논리 도메인 모델(What)
+## 2. 본체, 연결, 배분
 
-### 3.1 End-to-End 흐름(개념)
-대표적인 정본 흐름(국내/해외 공통)은 아래와 같다.
+### 2.1 본체 엔티티는 독립적으로 존재할 수 있어야 한다
 
-`projects` → `orders` → `order_lines`
-(+ 필요 시 `order_line_overrides`)
-→ `sourcing_cases` → `sourcing_case_lines`
-  → `rfqs` / `rfq_lines` / `rfq_allocations`
-  → `purchase_orders` / `po_lines` / `po_allocations`
-→ (비용) `costs` / `cost_allocations` (+ 보조: `po_cost_links`)
-→ (지급-직접정산) `payments` / `payment_lines`
-→ (지급-이체통제) `payables` / `payable_cost_allocations` → `payments` / `payment_payable_allocations`
-→ (증빙) `documents` + `document_links`
+`documents`, `costs`, `payments`, `purchase_orders`, `shipments`, `logistics_jobs` 같은 엔티티는 특정 대상의 부속 행으로만 존재하지 않는다. 각각 독립적인 업무 사실이며, 필요할 때 다른 엔티티와 연결된다.
 
-### 3.2 프로젝트/주문/주문라인
-- **projects**: 계약 단위(기본적으로 프로젝트 1개 = 계약 1개)
-- **order_lines**: 고객에게 납품해야 할 약속 단위(요구 품목/수량/규격)
-  - order_lines는 프로젝트 하에서 정의되는
-  '납품 또는 집행 요구의 최소 단위'이다.
-  - 반드시 주문서(order)를 전제로 하지 않는다.
-  - 수급(sourcing), 정산(receivable), 배송(delivery)의 기준점이 된다.
-  - 계약 문서상 요구사항을 구조화한 내부 엔티티이다.
+이 원칙은 테이블 사이의 결합도를 낮추고, 나중에 새로운 연결 대상이 늘어났을 때 본체 테이블에 FK 컬럼을 계속 추가하는 문제를 줄인다.
 
+### 2.2 `_links`는 열린 관계를 위한 연결이다
 
-#### 프로젝트 유형(예시)
-- `TENDER` : 공공 입찰(단건 입찰 포함)
-- `DIRECT` : 민간/직접 계약
-- `FRAME` : 장기/콜오프(기간 내 다수 주문 발생 가능)
+`*_links`는 서로 독립적으로 존재할 수 있는 엔티티 사이의 관계를 표현한다.
+
+예를 들어 문서는 혼자 존재할 수 있고, 프로젝트도 문서 없이 존재할 수 있다. 그래서 `projects`에 문서 FK를 직접 늘리는 대신 `document_links`로 연결한다. 이 방식은 연결 대상이 다양하거나 앞으로 늘어날 수 있는 영역에서 본체 테이블의 의존성이 과도하게 커지는 것을 막는다.
+
+`_links`는 보통 관계의 존재를 표현하며, 금액/수량의 책임 배분까지 의미하지는 않는다.
+
+### 2.3 `_allocations`는 금액/수량/책임의 배분이다
+
+`*_allocations`는 집계와 정산에 쓰이는 귀속 정보를 표현한다. 단순히 “연결되어 있다”가 아니라, 금액이나 수량이 어느 프로젝트, 수급 라인, 발주 라인에 얼마만큼 귀속되는지를 설명한다.
+
+정산에서 빠지면 안 되는 비용은 등록 시점에 필요한 allocation도 함께 생성해야 한다. “나중에 배분한다”는 운영 방식은 누락 위험이 크므로, DDL 주석과 업무 규칙에서 필수 배분 여부를 명확히 둔다.
 
 ---
 
-## 4. 조달(Procurement) 모델링 의도
+## 3. 계약 요구와 수급 실행의 분리
 
-### 4.1 99% 경로 vs 1% 희소 케이스
-#### 99% 경로(운영 편의성 우선)
-대부분은 **주문라인 1개 = 실제 구매/납품 상품(goods) 1개**다.  
-그래서 `order_lines.ol_default_g_sn`(기본 goods FK)을 제공한다.
+### 3.1 공고와 프로젝트는 분리한다
 
-- override가 없다면 `ol_default_g_sn`을 사용해 RFQ/PO 라인을 자동 생성할 수 있다.
+공고는 외부 조달/입찰 정보이고, 프로젝트는 내부 계약 진행과 수행 관리 단위다. 둘은 생성 시점, 책임, 보존 목적이 다르므로 분리하고 링크로 연결한다.
 
-#### 1% 희소 케이스: Override 패턴(`order_line_overrides`)
-전체 스키마를 복잡하게 만들지 않기 위해 희소 케이스는 `order_line_overrides`로만 수용한다.
+이렇게 하면 공고 없이 생기는 직접 계약, 하나의 공고에서 파생되는 내부 진행, 공고 정보의 보존을 서로 다른 책임으로 다룰 수 있다.
 
-- `SPLIT` : 수량을 나눠 여러 상품/여러 발주로 처리
-- `SUBSTITUTE` : 일부를 유사 대체품으로 처리
-- `ADD_ON` : 불량/추가요청 등으로 추가 구매
-- `BUNDLE` : 조합 납품(PC 등) 구성품 구매 단위
+### 3.2 `order_lines`는 계약 요구의 구조화된 스냅샷이다
 
-**문서 생성 규칙(정본)**  
-override가 있으면 override 전개 결과를 우선하여 RFQ/PO 라인을 만든다.  
-override가 없으면 default goods를 사용한다.
+`orders`와 `order_lines`는 고객에게 약속한 계약/주문 요구를 구조화한다. `order_lines`는 실제로 무엇을 사야 하는지의 최종 실행 지시가 아니라, 고객에게 납품하거나 수행해야 하는 요구 단위다.
 
-#### 4.1.1 `BUNDLE`(OLO)는 “BOM 정본”이 아니라 “계약 고정/고지 스냅샷(선택)”이다
-- `order_line_overrides(override_type='BUNDLE')`는 **조합 납품의 구성품을 계약/대외 커뮤니케이션 수준에서 고정하거나, 고객이 구성품/모델/브랜드를 계약에 명시한 경우**에만 사용한다.
-- 고객 요구가 “기능/성능 요구(예: 전화 가능, RAM 100GB, 저장공간 충분)”처럼 **구체 구성품이 계약에 고정되지 않은 경우**, OLO(BUNDLE)를 만들지 않고 `order_lines`에 요구사항을 기록한 뒤 **실제 수급/조립 계획은 SC 이하(SCL, RFQ/PO 라인)에서만 전개**한다.
-- 동일한 의미(구성품 전개)를 OLO와 SC 이하에 **혼용(사람마다 임의 선택)하지 않는다**.
-  - 원칙: “계약에 고정된 것 = OLO(선택)”, “내부 수급/조립 전개 = SC 이하”
+계약 문서에 명시된 품명, 규격, 수량, 단가, 납품 조건은 이 단계에서 보존한다. 이후 수급 과정에서 실제 구매 품목이나 공급처가 달라질 수 있으므로, 계약 요구와 실제 수급 실행을 같은 테이블에 섞지 않는다.
 
-### 4.2 Sourcing Case는 “발주 단위”가 아니라 “수급 전략/관리 단위”
-- `sourcing_cases`는 수급 전략(국내/해외/제작) 및 진행 상태를 담는 관리 단위다.
-- 실제 구매 실행은 `purchase_orders`에서 이루어진다.
-- 하나의 `sourcing_case`에 여러 PO가 연결될 수 있다(분할 발주 가능).
+### 3.3 왜 OL, OLO, SC, SCL로 나누는가
 
-#### 다중 발주 검증 규칙(운영/리포트 레벨)
-하나의 `sourcing_case`에 속한 모든 `po_lines.qty` 합은,
-- 케이스 목표 수량(있는 경우) 또는
-- 연결된 주문라인의 요구 수량
-과 논리적으로 일치해야 한다.
+계약 자체만 보면 구조는 단순하다. 원칙적으로는 `order_lines`만 있어도 “고객에게 무엇을 납품해야 하는가”를 표현할 수 있다.
 
-이 규칙은 DB 제약으로 강제하지 않고, 운영 검증/리포트로 점검한다.
+그런데 실제 운영에서는 하나의 계약 라인을 납품하기 위해 여러 부품, 구성품, 대체품, 작업 단위로 나누어 구매해야 할 수 있다. 이 문제를 수급 레이어에서만 풀어도 된다고 볼 수 있지만, Balhea ERP는 계약 담당자와 수급 담당자의 권한과 협업 경계를 분리해야 한다.
 
-### 4.3 후보군 비교의 “그룹 키”는 goods가 아니라 `order_line`/`sc_sn`
-드라이버/CPU/모니터 등 후보 비교는 “같은 요구(주문라인) 또는 같은 수급 케이스” 단위로 묶인다.
+계약 담당자는 고객과 약속한 요구를 관리하고, 필요하면 하나의 `order_lines`를 여러 `order_line_overrides`로 나누어 “이 부분은 내가 수급하고, 이 부분은 다른 담당자에게 위임한다”처럼 협업 단위를 만들 수 있어야 한다. 반대로 수급 담당자는 자신에게 넘어온 범위 안에서 실제 조달 대상을 `sourcing_cases`와 `sourcing_case_lines`로 전개한다.
 
-- BUNDLE(PC)처럼 한 `sc_sn` 안에 구성품이 섞일 수 있다.
-- 그래서 allocation에서 `olo_sn`을 사용하여 구성품/후보군/분할을 명시할 수 있어야 한다.
+이 때문에 4단계 구조가 생긴다.
 
-### 4.4 RFQ/PO는 “진실의 원천(Source of Truth)”
-실제로 업체에 전달한 RFQ/PO 문서와 라인 정보가 구매/정산/증빙의 기준이다.
+- `order_lines`: 계약 담당자가 관리하는 고객 약속의 기본 단위
+- `order_line_overrides`: 계약 담당자가 관리하는 계약/대외 고정 또는 위임 가능한 세부 단위
+- `sourcing_cases`: 수급 담당자와 진행 상태를 담는 수급 실행 컨테이너
+- `sourcing_case_lines`: 수급 담당자가 관리하는 실제 조달 대상
 
-- 주문라인의 default/override는 입력 편의 및 의사결정 기록 목적
-- 최종 실제 구매는 **PO 라인**을 기준으로 계산한다.
+이 구조의 목적은 복잡함 자체가 아니라 권한 경계다. OL/OLO는 계약 담당자의 공간이고, SC/SCL은 수급 담당자의 공간이다. 여러 사람이 같은 계약 라인을 직접 수정하게 하지 않고, 역할별로 자기 영역에서만 복잡한 경우의 수를 수용하도록 나눈다.
+
+### 3.4 `order_line_overrides`는 계약/대외 고정 스냅샷이다
+
+`order_line_overrides`는 실제 수급 품목 전개표가 아니다. 고객과의 계약 또는 대외 커뮤니케이션에서 특정 구성이나 대체/포함 관계를 고정해야 하는 희소 케이스를 기록하는 보조 구조다.
+
+내부적으로 어떤 품목을 실제 구매할지는 `sourcing_cases`와 `sourcing_case_lines` 아래에서 전개한다. 즉, “계약에 고정된 구성”은 OLO에 남길 수 있지만, “수급 과정에서 결정되는 구성”은 SCL 이하에서 관리한다.
+
+### 3.5 수급 케이스와 수행 담당
+
+`sourcing_cases`는 발주서 그 자체가 아니라 수급 전략과 진행을 관리하는 단위다.
+
+`sc_owner_a_sn`은 수급 케이스를 생성하고 소유한 구매 담당자를 의미한다. `sc_assignee_a_sn`은 현재 실제 수행 담당자다. 본인이 직접 수행하면 둘이 같을 수 있고, 협업 요청을 통해 다른 담당자가 수행하면 달라질 수 있다.
+
+수급의 실제 대상은 `sourcing_case_lines`에 둔다. SCL은 RFQ와 PO allocation의 기준이 되며, 계약 라인과 실제 구매 실행 사이를 연결하는 중심 축이다.
 
 ---
 
-## 5. 국내/해외/제작 도메인 분리
+## 4. 견적과 발주
 
-### 5.1 수급 방식(Sourcing Type)
-수급 방식은 `sourcing_cases.sourcing_type`에서 관리한다.
+### 4.1 견적기안과 업체별 견적은 다르다
 
-- `DOMESTIC` : 국내 구매(견적→발주→납품)
-- `OVERSEAS` : 해외 구매(통화/인도조건/운송/통관 등 옵션 필드/프로세스 추가)
-- `IN_HOUSE` : 자체 제작(재료 수급 + 생산/검수 등 별도 프로세스)
+신규 시스템의 견적은 “개별 견적서부터 생성”하는 방식이 아니라, 먼저 내부 견적기안을 만들고 그 기안에서 어떤 품목을 어떤 거래처에 보낼지 정한다.
 
-수급 방식은 업무 중 변경될 수 있다(국내→해외 등).  
-스키마를 과도하게 복잡하게 만들기보다, 현재 활성 타입을 갱신하고 이력은 로그(`audit_changes`/`activity_logs`)로 남긴다.
+- `rfq_plans`, `rfqp_lines`: 내부 견적기안과 견적 대상 라인
+- `rfqp_vendors`: 견적 요청 대상 거래처
+- `rfqs`, `rfq_lines`: 특정 거래처에 보낸 요청과 회신
+- `rfqp_allocations`: 견적기안 라인이 어떤 수급 라인에 귀속되는지 설명
 
-### 5.2 RFQ/PO 단일화 정책 + 해외 옵션 필드
-운영 관점에서 국내/해외는 “테이블 분리”가 아니라 “옵션 필드 차이”에 가깝다.
+이 분리는 여러 거래처에 같은 요구를 보내고, 회신 결과만 업체별로 비교하기 위한 구조다.
 
-- RFQ: `rfqs` / `rfq_lines` / `rfq_allocations`
-- PO: `purchase_orders` / `po_lines` / `po_allocations`
-- 해외 옵션(필요 시만): `trade_terms`, `ship_from_country`, `ship_to_country`, 라인 통화(`po_lines.ccy`) 등
+### 4.2 발주서는 실제 구매 문서다
 
-#### 소스 오브 트루스(중요)
-국내/해외 구분의 최종 기준은 **`sourcing_cases.sourcing_type`** 이다.  
-RFQ/PO 헤더의 sourcing_type은 조회/필터 편의용(선택)으로 둘 수 있다.
+`purchase_orders`와 `po_lines`는 실제 공급처에 보낸 발주 문서와 라인이다. 최종 구매 수량, 단가, 통화, 세금, 납기 등 실제 구매 계산의 기준은 PO 라인이다.
 
-### 5.3 해외 비용의 환율 재현(감사 대응)
-해외 비용은 시점별 환율이 달라 감사 재현성이 중요하다.  
-정산 시점의 적용 환율과 원화 환산 결과를 **고정 저장**한다.
+발주 라인의 실행 귀속은 `po_allocations`로 해석한다. 하나의 PO 라인이 어떤 SCL 또는 프로젝트 실행 구조에 대응하는지 명확해야, 이후 입고/출고/정산 리포트가 흔들리지 않는다.
 
-- 권장: `cost_fx_applications`
-  - `applied_fx_rate`, `as_of_dt`, `base_amount(KRW)` 저장
-  - 필요 시 `fx_rates` 참조
+### 4.3 복합 연결은 설계 의도다
+
+견적과 발주는 단순 1:1만을 전제로 설계하지 않는다. 하나의 계약 요구가 여러 수급 라인으로 나뉠 수 있고, 여러 수급 라인이 하나의 견적기안이나 발주에 함께 담길 수도 있다. 반대로 하나의 수급 라인이 여러 견적 비교나 분할 발주로 이어질 수도 있다.
+
+그래서 RFQ와 PO는 SCL을 직접 기준으로 삼지 않고, `rfqp_allocations`와 `po_allocations`를 통해 실행 귀속을 표현한다. 이 allocation 구조는 예외 처리를 위한 보조 장치가 아니라, 협업과 분할 수급을 정식으로 수용하기 위한 핵심 설계다.
 
 ---
 
-## 6. 거래처(Parties) 모델링 의도
+## 5. 비용, 정산 처리 요청, 정산 결과
 
-### 6.1 Parties는 “정산/결제 상대” 단위로만
-- parties는 정산 주체(플랫폼/업체) 단위로만 관리한다.
-  - 예: 네이버, 쿠팡, 알리익스프레스, 해외 벤더 등
-- 오픈마켓 셀러 N곳을 parties로 분해하지 않는다.
-  - 셀러 표시명/발행자명은 `documents` 메타(issuer_name 등) 텍스트로만 보존한다.
-- 퀵/대행/비정형 지출은 예약된 party 1개로 처리한다.
+### 5.1 Cost, Payable, Payment는 AP 3계층이다
 
----
+AP 영역은 비용/환불 근거, 재무 처리 요청, 실제 처리 결과를 분리한다. 테이블명은 `payables`, `payments`이지만, 운영 의미는 더 넓게 해석한다.
 
-## 7. 재무(비용/지급/증빙) 논리 모델
+- `costs`: AP 정산의 원인/근거. 지급해야 할 비용뿐 아니라 환불/차감 근거가 되는 negative cost도 기록한다.
+- `payables`: AP 정산 처리 요청. 지급 요청(`PAYMENT`)과 환불 확인 요청(`REFUND`)을 모두 담는다.
+- `payments`: AP 실제 정산 결과. 지급 처리 결과(`PAYMENT`)와 환불 확인 결과(`REFUND`)를 모두 담는다.
 
-### 7.1 비용 귀속의 정답은 `cost_allocations`
-- 원장(발생): `costs`
-- 귀속/안분: `cost_allocations`
-  - 귀속 키: `p_sn/o_sn/ol_sn/olo_sn/sc_sn` 등
+따라서 지급/환불 처리는 기본적으로 `costs -> payables -> payments`로 흐른다. 단, 카드 즉시결제는 이미 실제 지급이 완료된 결과를 등록하는 것이므로 payable 없이 `costs -> payments`로 바로 기록한다.
 
-> 원가/마진 계산의 기준은 항상 `cost_allocations`다.  
-> `po_cost_links` 같은 링크는 조회/탐색/UI 편의용으로만 허용한다(회계 기준 아님).
+환불/차감은 원 cost를 수정하지 않고 별도 negative cost로 기록한다. 이 refund cost는 `ct_parent_ct_sn`으로 원 cost를 가리키며, 원 cost의 환불 여부와 순비용은 자식 refund cost 집계로 계산한다.
 
-### 7.2 Cost / Payable / Payment 역할 분리
-- **Cost(`costs`)**: 모든 비용의 유일한 원천 원장
-- **Payable(`payables`)**: 계좌이체가 필요한 경우에만 생성하는 내부 지급요청/승인 단위
-- **Payment(`payments`)**: 실지급 결과(현금흐름)
+현금은 현재 서비스 기획이 확정되지 않았다. 현금으로 발생한 비용은 `costs`에만 등록하고, `payments`에는 기록하지 않는다. 실제 현금 출납, 증빙, 시재 관리 방식은 별도 요구가 생겼을 때 설계한다.
 
-기본 연결:
-- payable ↔ cost: `payable_cost_allocations`
-- payment ↔ cost(직접정산): `payment_lines` 는 현재 사용 안함. 추후 필요시 확장 가능
-- payment ↔ payable(이체 집행): `payment_payable_allocations`
+### 5.2 Payable은 Cost 없이 생성하지 않는다
 
-### 7.3 “무엇을 생성해야 하는지” 결정 트리(개념)
-질문 흐름:
-1) 비용이 발생했나? → YES면 `costs`
-2) 특정 프로젝트/라인/수급에 기인하나? → YES면 `cost_allocations`
-3) 카드/현금처럼 바로 결제되었나? → YES면 `payments` (+ `payment_lines`)
-4) 계좌이체 승인/보류 프로세스가 필요한가? → YES면 `payables` + `payable_cost_allocations`
-5) 승인된 payable이 실제로 집행되었나? → YES면 `payments` + `payment_payable_allocations`
-6) 분할 이체인가? → YES면 `payables`를 여러 건으로 나눈다
+현재 설계에서 payable은 비용 근거 없이 독립적으로 신청하는 범용 요청 테이블이 아니다. 항상 특정 cost를 근거로 생성한다. 하나의 cost는 여러 번 나누어 처리 요청될 수 있으므로 cost 1건에 payable N건은 가능하다. 그러나 payable 1건은 데이터적으로 payment 1건으로 처리된다.
 
----
+`pbl_request_type='PAYMENT'`이면 재무에게 지급 처리를 요청한다. `pbl_request_type='REFUND'`이면 negative refund cost에 대해 환불 입금 또는 카드취소 확인을 요청한다.
 
-## 8. 물류/배송(PO After) 논리 모델
+여러 cost를 하나의 payable로 묶는 방식은 현재 정책에서 사용하지 않는다.
 
-### 8.1 “배송은 비용이 아니라 상태/흐름”이다
-운송료 등 비용은 별도의 `costs`로 기록한다.  
-배송/물류는 “무엇이 어디로 어떻게 이동했는가”를 추적한다.
+### 5.3 Payment는 AP 실제 결과만 기록한다
 
-### 8.2 PO After는 4축으로 분리한다(정본)
-발주 이후 영역을 실무 추적 단위에 따라 4축으로 모델링한다.
+`payments`에는 대기 상태를 두지 않는다. 대기/승인/보류는 `payables`의 책임이다. `payments.pay_status`는 `PROCESSED` 또는 `CANCELLED`만 사용하며, 실제 정산 결과가 확인된 뒤 row를 만든다.
 
-1) **실물(바코드 단위)**: `inventory_units`  
-2) **운송(외부 구간 추적)**: `shipments` + `shipment_milestones`  
-3) **작업(사람이 수행)**: `logistics_jobs` + `logistics_job_stops` + `logistics_job_lines`  
-4) **협의(요청/역제안/수락)**: `delivery_requests` + `delivery_request_lines` + `delivery_request_proposals`
+`payments.pay_tx_type='PAYMENT'`는 실제 지급 처리 결과이고, `payments.pay_tx_type='REFUND'`는 실제 환불 확인 결과이다. 금액은 양수로 저장하고, 지급/환불 방향은 `pay_tx_type`으로 해석한다.
 
-이 분리로,
-- 직송(회사 미접촉)과 바코드 기반 재고 흐름을 동시에 수용하고
-- 물류팀의 실행 이력을 1급 엔티티로 남기며
-- 구매팀↔물류팀 협의(역제안/수락/거절) 로그를 독립적으로 관리한다.
+세금계산서 대사는 `payments`에 세전/세금을 나누어 저장하지 않고 총액 기준으로 수행한다. 세금계산서 총액은 `tax_invoices.ti_total_amount`, 실제 지급/환불 총액은 `payments.pay_amount`, 매칭 금액은 `tax_invoice_payment_allocations.tipa_amount`로 비교한다.
 
-### 8.3 협의가 필요한 경우/불필요한 경우
-- 필요: 요일/시간창 협의, 역제안/수락/거절이 중요한 경우  
-  → `delivery_requests`(+ proposals)로 합의 로그를 남기고, 실행을 `logistics_jobs`로 만든다.
-- 불필요: 협의 없이 바로 실행되는 긴급 출고/납품  
-  → `logistics_jobs`만으로 실행 이력을 남긴다.
+### 5.4 Cost의 출처는 `PROJECT`와 `PO`로 나눈다
 
-### 8.4 직송 vs 바코드 추적(회사 접촉 여부)
-- 직송(회사 미접촉): `inventory_units` 생략 가능  
-  - 운송 추적이 필요하면 `shipments` + `shipment_milestones`
-  - 납품 증빙은 문서 허브로 연결(`documents` + `document_links`)
-- 회사 접촉/바코드 필요: 입고/출고/재고가 필요하면 `inventory_units` 생성 후 작업 라인에 담는다.
+`costs.ct_type`은 비용의 해석 출처를 크게 두 가지로 구분한다.
 
-### 8.5 재고(Inventory) 정본 모델 — goods / inventory_units / inventory_operations
+- `PROJECT`: 프로젝트 비용
+- `PO`: 발주서에서 발생한 복합 비용
 
-이 시스템에서 재고는 "수량"이 아니라 **사건(작업)과 실물 단위**로 관리한다.  
-물류/배송 레이어에서 재고 모델의 정본은 다음 3요소로 구성된다.
+프로젝트 비용은 `project_cost_allocations`로 프로젝트에 배분한다. 발주서 비용은 `po_cost_links`로 PO와 1:1 연결한다.
 
-#### 8.5.1 goods vs inventory_units (정의 vs 실물)
-- `goods`는 **품목 정의(Item Master)** 이다.  
-  물품명/제조사/모델/스펙 같은 “정의”가 들어가며, `g_stock`은 현재잔고(balance)로 운영한다.
-- `inventory_units(IU)`는 **회사 통제 하에 실물을 인수(수령)하고 바코드(관리번호)를 할당한 단위**다.  
-  즉, “아직 도착하지 않은 물건(미수령)”은 원칙적으로 IU로 만들지 않는다.
+PO는 내부에 상품 라인과 특수 비용 라인을 가질 수 있는 복합 비용이다. 상품 비용은 `po_allocations`의 분배 정보를 활용해 해석하고, PO 특수 비용 라인이 있으면 `po_cost_line_allocations`를 반드시 함께 생성해 프로젝트로 배분한다.
 
-#### 8.5.2 iu_status와 iu_location_type의 축 분리(핵심)
-`inventory_units`에는 두 축이 있다.
-
-- `iu_status` = **실물 상태(state)** (정본)
-  - ACTIVE: 보유(재고 집계 대상)
-  - RESERVED: 예약(출고/납품 예정으로 묶임; 다른 작업에 사용 금지)
-  - DELIVERED: 납품완료(고객 인도 완료; 재고 집계 제외)
-  - DAMAGED: 파손
-  - LOST: 분실
-  - CONSUMED: 소모(조립/가공 등 투입되어 재고 집계 제외)
-- `iu_location_type` = **현재 위치(location)** (정본)
-  - VENDOR / OFFICE / WAREHOUSE / CUSTOMER + 해외 확장(CUSTOMS/PORT/AIRPORT) + IN_TRANSIT
-
-**주의(과거 혼동 방지):**
-- `iu_status`에 `IN_OFFICE` 같은 위치성 값이 섞이면, `iu_location_type`과 중복/모순이 발생한다.  
-  따라서 본 설계에서는 `iu_status`를 상태(state) 전용으로 고정한다.
-- `IN_OFFICE`는 DDL 생성 과정에서 혼재된 값으로 판단되며, 의미 충돌 방지를 위해 제거되었다.
-
-#### 8.5.3 부품/완제품의 IU 운용(성능/운영 타협)
-IU를 “항상 1개=1행”으로 강제하면 대량 부품에서 row 폭발이 발생한다.  
-따라서 다음 원칙을 사용한다.
-
-- 부품류: 1박스/1로트를 IU 1행(`iu_qty > 1`)로 관리 가능
-  - 사용 시 **split(분할)** 하여 사용분 IU를 생성하고, 그 사용분 IU를 `CONSUMED` 처리한다.
-  - 원 IU(박스/로트)는 잔량만 감소한다.
-- 완제품: 기본적으로 IU qty=1(개별) 추적
-  - 납품/AS/리콜 대응을 고려하면 완제품은 개별 IU 추적이 정합성이 높다.
-
-#### 8.5.4 재고 원장(ledger): inventory_operations / inventory_operation_lines
-재고 변화는 단순히 IU 수량을 수정하는 것이 아니라, **작업(사건) 단위로 원장을 남긴다.**
-
-- `inventory_operations(IO)` = 작업 헤더(문서)
-  - `io_type`: RECEIPT / ISSUE / ASSEMBLY / DISASSEMBLY / ADJUSTMENT / SCRAP
-  - `io_status`: DRAFT / POSTED / CANCELLED
-    - io_status는 "문서/작업 처리 상태"이며 iu_status(실물 상태)와 다른 축이다.
-- `inventory_operation_lines(IOL)` = 원장 라인
-  - `iol_direction`: IN / OUT
-  - `iol_g_sn`, `iol_qty`: 어떤 품목이 얼마나 증감했는지
-  - `iol_iu_sn`: 선택(추적이 필요한 경우에만 IU를 연결)
-
-**조립/분해의 핵심**:  
-하나의 작업(IO) 안에 input(OUT) + output(IN) 라인이 같이 존재해야 한다.  
-그래야 “CPU 1 + RAM 2 → PC 1”이 **한 사건**으로 묶이고, 원인/결과 추적이 가능해진다.
-
-#### 8.5.5 goods.g_stock(현재잔고) 운영 선언
-`goods.g_stock`은 단순 캐시가 아니라, **IO/IOL 반영과 IU 상태 변화에 의해 트랜잭션으로 항상 최신화되는 현재잔고(balance)** 로 운영한다.
-
-- 운영 원칙: g_stock은 수동 수정 금지
-- 정합성: POSTED 된 재고 작업만 재고에 반영되고, 그 결과가 g_stock에 누적된다.
-
+PO 환불/차감 cost는 같은 PO에 대해 `po_cost_links`를 새로 만들지 않는다. `ct_parent_ct_sn`으로 원 PO cost를 따라가고, 원 PO cost의 `po_cost_links`를 통해 PO 귀속을 해석한다.
 
 ---
 
-## 9. 용어 불변(혼동 방지)
+## 6. 문서와 증빙
 
-### 9.1 문서 / 실물 / 작업은 절대 섞지 않는다
-- 문서(Document): 계약/주문/RFQ/PO 등 “서류/목록” 단위 → `*_lines`
-- 실물(Physical): 바코드가 붙는 통제 가능한 실물 단위 → `inventory_units`
-- 작업(Execution): 사람이 수행한 수거/이송/납품 실행 단위 → `logistics_jobs`
+### 6.1 파일 원본은 `documents`에 한 번 저장한다
 
-협의(요청/역제안/수락)는 실행이 아니므로 별도 엔티티로 둔다: `delivery_requests`(+ proposals)
+문서/첨부/증빙은 대상 테이블마다 별도 파일 테이블을 만들지 않는다. 파일 원본과 보존 정보는 `documents`에 저장하고, 대상과의 관계는 `document_links`로 연결한다.
 
-### 9.2 “items”라는 단어/엔티티는 사용하지 않는다
-아이템은 범위가 넓어(품목/라인/실물/작업) 혼동을 유발한다.  
-정본에서 의미는 아래로 고정한다.
+동일 파일은 여러 프로젝트, 비용, 지급, 발주, 배송 작업에 연결될 수 있다. 이때 파일은 중복 저장하지 않고 링크만 늘린다.
 
-- 문서의 항목 = `*_lines`
-- 실물 1개 = `inventory_units`
-- 작업 1건 = `logistics_jobs`
+### 6.2 문서 대상 타입은 실제 테이블명 기준이다
+
+`documents.doc_category`와 `document_links.dl_target_type`은 실제 대상 테이블명을 대문자로 사용한다. 예를 들어 `PROJECTS`, `ORDER_LINES`, `ORDER_LINE_OVERRIDES`, `COSTS`, `PAYMENTS`, `PURCHASE_ORDERS`처럼 기록한다.
+
+세부 문서 유형이 필요하면 현재 DDL에 없는 별도 `doc_type`을 임의로 가정하지 않고, DDL이 제공하는 메모/파일명/스토리지 키 등의 보존 수단을 활용하거나 별도 스키마 변경을 승인받아야 한다.
 
 ---
 
-## 10. (부록) 운영 코드 표준(드롭다운/검증용)
-> 코드값은 가능한 한 enum처럼 고정하고, UI/백엔드에서 드롭다운으로 관리한다(임의 텍스트 입력 금지).
+## 7. 거래처와 계좌
 
-### 10.1 Incoterms / trade_terms (Incoterms 2020, 대문자)
-`EXW`, `FCA`, `FOB`, `CFR`, `CIF`, `CPT`, `CIP`, `DAP`, `DPU`, `DDP`
+`parties`는 정산/거래 상대를 표현한다. 기존 시스템에서 vendors가 은행 정보와 1:1로 결합되어 있었더라도, 신규 모델에서는 거래처 본체와 은행 계좌를 분리한다.
 
-- 국내 구매: 보통 NULL 허용(권장)
-- 해외 구매: 가능하면 입력(권장)
-- trade_terms는 가격조건이 아니라 책임 경계선이므로 운송/통관 비용 귀속과 함께 맞춘다.
+거래처 하나가 여러 계좌를 가질 수 있으므로 은행 정보는 `bank_accounts`에서 관리한다. 비용, 지급, 증빙은 거래 상대와 계좌를 각각 필요한 수준에서 참조한다.
 
-### 10.2 delivery_method (PO 이후 물류 1차 방식)
-- `PICKUP_BY_LOGISTICS` : 물류팀이 판매처 방문 수거
-- `SELLER_SHIP_TO_COMPANY` : 판매처가 회사(사무실/창고)로 배송
-- `SELLER_SHIP_TO_CUSTOMER` : 판매처가 납품처로 직송
-
-(해외 확장 예시) `FORWARDER_MANAGED`, `COURIER`, `FREIGHT_TRUCK`
-
-### 10.3 procurement_mode
-`DOMESTIC`, `OVERSEAS`, `IN_HOUSE` (+ 필요 시 `SERVICE`)
-
-### 10.4 fx_rate_policy (환율 적용 “정책” 메모)
-`QUOTE_DATE`, `PO_DATE`, `PAYMENT_DATE`, `CUSTOMS_DATE`, `MANUAL`  
-> 실제 환율 숫자는 costs 쪽에 고정 저장한다.
-
-### 10.5 작업/운송 상태 코드(예시)
-- `logistics_jobs.job_type`: `PICKUP`, `TRANSFER`, `DELIVERY`, `MIXED`
-- `logistics_job_stops.stop_type`: `VENDOR`, `OFFICE`, `WAREHOUSE`, `CUSTOMER` (+ 해외 확장)
-- `shipment_milestones.milestone_type`: `CREATED`, `PICKED_UP`, `IN_TRANSIT`, `ARRIVED`, `WAREHOUSE_IN`, `DELIVERED` (+ 해외 확장)
-- `inventory_units.iu_status`: `ACTIVE`, `RESERVED`, `DELIVERED`, `DAMAGED`, `LOST`, `CONSUMED`
-
-
-### 10.6 기타 코드들
-- `party_type`: CUSTOMER, VENDOR, FORWARDER, BROKER, OTHER
-- `project_type`: TENDER, DIRECT, FRAME
-- `p_status`: PRE_CONTRACT, ACTIVE, CLOSED, CANCELLED
-- `order_type`: CONTRACT_ORDER, PRE_CONTRACT_ORDER
-- `o_status`: OPEN, IN_PROGRESS, CLOSED, CANCELLED
-- `ol_status`: OPEN, IN_PROGRESS, DELIVERED, CANCELLED
-- `override_type`: SPLIT, SUBSTITUTE, ADD_ON, BUNDLE
-- `sourcing_type`: DOMESTIC, OVERSEAS, IN_HOUSE
-- `sc_status`: OPEN, IN_PROGRESS, READY_TO_HANDOFF, HANDED_OFF, CANCELLED
-- `cost_type`: PRODUCT, MATERIAL, SHIPPING, CUSTOMS, SERVICE, OTHER
-- `pay_method`: CARD, TRANSFER, CASH
-- `pay_status`: PENDING, PAID, CANCELLED
-- `step_code`: RFQ, SUPPLIER_SELECTED, PAYMENT, SHIPMENT, CUSTOMS, DELIVERY, QC
-- `os_status`: TODO, DOING, DONE, BLOCKED, CANCELLED
-- `iwo_status`: TODO, DOING, DONE, BLOCKED, CANCELLED
-- `rfq_status`: DRAFT, SENT, REPLIED, CANCELLED, CLOSED
-- `reply_status`: PENDING, REPLIED, DECLINED
-- `po_kind`: NORMAL, SAMPLE
-- `po_status`: DRAFT, SENT, ACCEPTED, REJECTED, CANCELLED, CLOSED
-- `tax_type`: TAX_INCLUDED, TAX_EXCLUDED, UNKNOWN
-- `sample_disposition`: DISCARD, KEEP_INTERNAL, INCLUDE_IN_DELIVERY
-
+오픈마켓의 개별 판매자처럼 운영상 별도 정산 주체로 관리하지 않는 대상은 무리하게 party로 쪼개지 않는다. 표시명이나 원문 정보 보존이 필요하면 문서나 메모 필드에 남기는 방식이 더 적합하다.
 
 ---
 
-## 11. 감사/추적(Logging) 의도
-- `activity_logs`: 주요 행위 기록(누가 무엇을 했는지)
-- `audit_changes`: 값 변경 이력(JSON 기반 포함 가능)
+## 8. 물류와 재고
 
-외래키만으로는 “누가 언제 무엇을 왜 바꿨는지”를 완전히 설명하기 어렵다.  
-따라서 로그를 통해 변경의 맥락을 보존한다.
+### 8.1 배송은 비용이 아니라 흐름이다
+
+운송료, 통관비, 취급비 같은 금전 사건은 `costs`로 기록한다. 반면 배송/물류는 “무엇이 어디에서 어디로 이동했고, 누가 어떤 작업을 수행했는가”를 추적하는 실행 흐름이다.
+
+그래서 물류 모델은 비용 모델과 섞지 않고, 배송 요청, 운송 추적, 작업 실행, 실물 재고를 분리한다.
+
+### 8.2 PO 이후 영역은 네 축으로 본다
+
+발주 이후의 흐름은 다음 축으로 나누어 해석한다.
+
+- 실물: `inventory_units`
+- 운송 추적: `shipments`, `shipment_milestones`
+- 사람이 수행한 작업: `logistics_jobs`, `logistics_job_stops`, `logistics_job_lines`
+- 협의와 요청: `delivery_requests`, `delivery_request_lines`, `delivery_request_proposals`
+
+직송처럼 회사가 실물을 직접 통제하지 않는 흐름에서는 재고 단위를 만들지 않을 수 있다. 반대로 회사가 수령하고 바코드나 재고 관리를 해야 하는 흐름에서는 실물 단위와 재고 작업을 남긴다.
+
+### 8.3 재고는 수량 수정이 아니라 사건 기록이다
+
+재고 변화는 단순히 현재 수량을 수정하는 방식으로 보지 않는다. 수령, 출고, 조립, 분해, 조정, 폐기 같은 사건을 원장으로 남기고, 그 결과로 현재 잔고가 해석되거나 갱신된다.
+
+`goods`는 품목 정의이고, `inventory_units`는 회사가 통제하는 실물 단위다. 품목 정의, 실물, 작업 사건을 섞지 않는 것이 재고 정합성의 핵심이다.
+
+---
+
+## 9. 용어 경계
+
+### 9.1 문서, 실물, 작업은 섞지 않는다
+
+- 문서: 계약, 주문, 견적, 발주처럼 사람이 합의하거나 전달한 기록
+- 실물: 실제로 수령, 보관, 출고, 납품되는 물건
+- 작업: 사람이 수행한 수거, 이동, 납품, 조정 같은 실행 사건
+
+같은 물품을 다루더라도 이 셋은 서로 다른 의미를 갖는다. 하나의 테이블에 모두 넣으면 조회는 쉬워 보이지만, 정산과 추적이 뒤에서 깨진다.
+
+### 9.2 `items`라는 단어를 피한다
+
+`items`는 품목, 문서 라인, 실물, 작업 대상이 모두 될 수 있어 혼동이 크다. Balhea ERP에서는 의미를 가능한 한 구체화한다.
+
+- 문서의 항목은 `*_lines`
+- 실제 통제 실물은 `inventory_units`
+- 수행 사건은 `*_jobs` 또는 `*_operations`
+- 수급 실행 대상은 `sourcing_case_lines`
+
+---
+
+## 10. 감사와 변경 이력
+
+외래키와 현재 상태만으로는 “누가, 언제, 왜 바꿨는가”를 설명하기 어렵다.
+
+따라서 중요한 업무 행위는 활동 로그로 남기고, 값 변경의 전후 관계가 필요한 영역은 감사 변경 이력으로 보존한다. 특히 담당자 변경, 수급 방식 변경, 비용 배분, 지급 상태 변경, 문서 연결 변경은 나중에 운영 책임을 설명해야 할 가능성이 높다.
+
+---
+
+## 11. 관련 문서
+
+- DDL 정본: `docs/db/ddl/*.sql`
+- 네이밍/정책: `docs/db/docs/schema-policy-and-naming.md`
+- 시나리오 예시: `docs/db/docs/service-scenarios.md`
+- 운영 가이드: `docs/db/docs/operations-guide.md`
+- 설계 결정 로그: `docs/db/docs/design-decisions-log.md`

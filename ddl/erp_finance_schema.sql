@@ -22,7 +22,7 @@
  * - finance 레이어는 "무엇을 얼마에 샀는가 / 팔았는가"를
  *   독립적으로 정의하지 않는다.
  *
- * - 비용(costs) 원장, 비용 귀속(*_cost_links),
+ * - 비용(costs) 원장, ct_type별 비용 연결/배분,
  *   실제 지급(payments) 및 관련 증빙을 관리한다.
  *
  * - 금액, 비용, 지급, 정산, 환율, 세금 등의 정보는
@@ -46,12 +46,13 @@
  *
  * ----------------------------------------------------------------------------
  * [링크 vs 안분의 해석 원칙]
- * - *_links 테이블은 조회 및 편의를 위한 관계 표현이다.
- * - *_allocations 테이블은
- *   원가 계산, 회계 처리, 정산의 기준이 되는 수치적 귀속을 의미한다.
+ * - *_links 테이블은 열린 관계 표현이다.
+ *   본체 엔티티에 가능한 모든 FK를 직접 추가하지 않음으로써
+ *   본체 테이블의 의존성 증가를 막고 엔티티 간 독립성을 유지한다.
+ *   links 자체는 수량/금액/비율/실행 귀속을 의미하지 않는다.
+ * - *_allocations 테이블은 원가 계산, 회계 처리, 정산의 기준이 되는 수치적 귀속을 의미한다.
  *
- * - finance 계산과 집계는
- *   *_links가 아니라 *_allocations를 기준으로 수행해야 한다.
+ * - finance 계산과 집계는 *_links가 아니라 *_allocations를 기준으로 수행해야 한다.
  *
  * ----------------------------------------------------------------------------
  * [DDL 편집 및 유지 원칙 — 요약]
@@ -76,10 +77,17 @@
  * ============================================================================
 
 [도메인 정의]
-- 기존 cost/payable/payment 는 "지출(Account Payable, AP)" 도메인이다.
-- 이번 receivable/receipt 는 "수금(Account Receivable, AR)" 도메인이다.
+- cost/payable/payment 는 "비용 정산(Account Payable, AP)" 도메인이다.
+  - costs    : 우리가 부담해야 할 비용/채무의 발생 원장
+  - payables : 비용을 근거로 재무에 지급/환불 처리를 요청하는 AP 정산 처리 요청 단위
+  - payments : 해당 비용 정산 도메인에서 실제 지급 또는 환불이 처리된 AP 정산 결과
+- receivable/receipt 는 "납품 정산(Account Receivable, AR)" 도메인이다.
   - receivables : 우리가 받아야 할 돈(채권/정산 단위; 수금 바구니)
-  - receipts     : 실제로 돈이 들어온 행위(입금 이벤트; 분할 수금 가능)
+  - receipts     : 해당 납품 정산 도메인에서 실제로 돈이 들어온 수금 이벤트
+- payments와 receipts는 단순한 전사 현금 출납장 한 쌍이 아니다.
+  AP(cost-payable-payment)는 낼 돈을 관리하고, AR(receivable-receipt)는 받을 돈을 관리한다.
+  두 도메인의 결과를 함께 이용하면 수입/지출의 양쪽 흐름을 볼 수 있지만,
+  은행계좌 잔고장이나 완전한 복식부기 총계정원장 자체를 의미하지는 않는다.
 
 [요구사항 핵심]
 - receivable은 개별 order_line과 붙지 않고, order_line들의 묶음인 order(주문서)와 1:1로 매핑된다.
@@ -193,8 +201,7 @@ CREATE TABLE receivables (
   CONSTRAINT fk_recv_customer
     FOREIGN KEY (recv_customer_pt_sn) REFERENCES parties(pt_sn)
 
-) COMMENT='수금/정산(채권) 헤더. 실제 수금 이벤트는 receipts로 기록.';
-
+) COMMENT='수금/정산(채권) 헤더. 실제 수금 이벤트는 receipts로 기록.' AUTO_INCREMENT=100;
 
 
 -- =============================================================================
@@ -221,8 +228,7 @@ CREATE TABLE receivable_order_links (
   CONSTRAINT fk_rol_o
     FOREIGN KEY (rol_o_sn) REFERENCES orders(o_sn)
 
-) COMMENT='수금(정산)과 주문서 연결(정본). receivable:order는 1:1이다';
-
+) COMMENT='수금(정산)과 주문서 연결(정본). receivable:order는 1:1이다' AUTO_INCREMENT=100;
 
 
 -- =============================================================================
@@ -255,25 +261,28 @@ CREATE TABLE receipts (
   CONSTRAINT fk_rcp_recv
     FOREIGN KEY (rcp_recv_sn) REFERENCES receivables(recv_sn)
 
-) COMMENT='실제 수금(입금) 이벤트. receivable에 대한 분할 수금 가능. 증빙은 documents+document_links.';
-
+) COMMENT='실제 수금(입금) 이벤트. receivable에 대한 분할 수금 가능. 증빙은 documents+document_links.' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
 -- TABLE: costs
 -- DESC : 비용(원장)
--- NOTE : costs는 '비용 발생' 원장이다(사유/금액/발생일). 귀속/안분은 *_cost_links 관리한다(원장은 단순 유지).
--- NOTE : 비용은 프로젝트(p_sn)/주문라인(ol_sn)/override(olo_sn)/수급케이스(sc_sn) 등에 귀속될 수 있다(대상은 *_cost_links 에서만 표현).
+-- NOTE : costs는 '비용 발생' 원장이다(사유/금액/발생일). 원장은 단순 유지하고, 귀속/안분은 ct_type별 연결/배분 테이블에서 관리한다.
+-- NOTE : ct_type은 PROJECT 또는 PO만 허용한다. PROJECT 비용은 project_cost_allocations로 프로젝트에 배분한다.
+-- NOTE : PO 비용은 po_cost_links로 발주서와 1:1 연결한다. PO 내부 상품 비용은 po_allocations, 발주 특수 비용은 po_cost_line_allocations를 통해 해석/배분한다.
+--        단, PO 환불/차감 cost는 po_cost_links를 새로 만들지 않고 ct_parent_ct_sn으로 원 PO cost를 참조한 뒤,
+--        원 PO cost의 po_cost_links를 따라 PO 귀속을 해석한다.
+-- NOTE : 환불/차감은 원 cost를 덮어쓰지 않고 별도 negative cost로 기록한다.
+--        원 cost의 환불 여부/환불액/순비용은 ct_parent_ct_sn으로 연결된 자식 REFUND cost 집계로 계산한다.
+-- NOTE : ORDER_LINES, ORDER_LINE_OVERRIDES, SOURCING_CASES, SOURCING_CASE_LINES에 비용을 직접 귀속하지 않는다.
 -- NOTE : 비용 증빙(거래명세서/정산근거/통관서류 등)은 documents+document_links로 costs에 연결한다(다중 첨부 가능).
 -- NOTE : 전자세금계산서(XML/PDF) 원본은 tax_invoices에 documents+document_links로 연결하고,
 --        tax_invoices ↔ payments 대사는 tax_invoice_payment_allocations로 관리한다.
 --        (즉, 세금계산서는 costs의 직접 정본이 아니다)
-
-
 -- ======================================================================
 CREATE TABLE costs (
   ct_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '비용 PK',
-  ct_type ENUM('PROJECT','OL','PO') NOT NULL COMMENT '비용 출처(ENUM) | PROJECT(프로젝트의 부대비용), OL(OL/OLO에 붙은 비용일때), PO(발주서 지급 비용)',
+  ct_type ENUM('PROJECT','PO') NOT NULL COMMENT '비용 부과/배분 대상 타입(discriminator). PROJECT:프로젝트 귀속 비용, PO:발주서/주문서 귀속 비용.',
   ct_kind ENUM('PO_COST', 'LOGISTICS','HANDLING_EQUIPMENT','PROCESSING','LABOR_SERVICE','QUALITY_TEST','TAX_FINANCE','SITE_WORK', 'GENERAL_EXPENSE', 'ADDITIONAL_DELIVERY')
     NOT NULL COMMENT 'LOGISTICS(물류/운송비), HANDLING_EQUIPMENT(하역/장비비), PROCESSING(가공/제조/외주비), LABOR_SERVICE(인건비/용역비), QUALITY_TEST(시험/품질/인증비), TAX_FINANCE(통관/세금/금융비), SITE_WORK(현장/공사/설치비), GENERAL_EXPENSE(일반경비/운영비), ADDITIONAL_DELIVERY(추가 납품-계약외)',
 /*
@@ -304,12 +313,14 @@ CREATE TABLE costs (
   PRIMARY KEY (ct_sn),
   KEY idx_costs_vendor (ct_pt_sn),
   KEY idx_costs_occurred_at (ct_occurred_at),
+  KEY idx_costs_parent_status (ct_parent_ct_sn, ct_status),
   CONSTRAINT fk_costs_vendor
     FOREIGN KEY (ct_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_costs_creator
-    FOREIGN KEY (ct_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='비용(원장)';
-
+    FOREIGN KEY (ct_a_sn) REFERENCES assignees(a_sn),
+  CONSTRAINT fk_costs_parent
+    FOREIGN KEY (ct_parent_ct_sn) REFERENCES costs(ct_sn)
+) COMMENT='비용(원장)' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: bank_accounts
@@ -352,47 +363,61 @@ CREATE TABLE bank_accounts (
 
   -- FK는 운영정책에 따라 선택
   -- ,CONSTRAINT fk_bank_accounts_pt FOREIGN KEY (bk_pt_sn) REFERENCES parties(pt_sn)
-) COMMENT='거래처 수취 계좌(국내/해외 겸용, 송금 입력용 주소록)';
-
+) COMMENT='거래처 수취 계좌(국내/해외 겸용, 송금 입력용 주소록)' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
 -- TABLE: payments
--- DESC : 지급/결제(카드/이체/현금) 원장
--- NOTE : payments는 실제 지출(지급) 원장이다.
--- NOTE : payments는 실지급 원장이다.
--- NOTE : 지급 분할/지급 단계(계약금/중도금/잔금)는 payables를 분할하여 표현한다.
--- NOTE : payment_lines는 본 운영 정책에서는 사용하지 않는다(지급 분할은 payables 분할로만 수행).
--- NOTE : 지급이 어떤 비용(costs)을 커버했는지의 근거/유도는 다음 경로로 해석한다:
---        payment(1:1) payable(pbl_inv_sn) → payable_cost_allocations → costs
+-- DESC : AP 정산 결과 원장(지급/환불)
+-- NOTE : payments는 AP(비용 정산) 도메인의 실제 정산 결과 원장이다.
+--        전사 전체 입출금 원장이 아니라, costs/payables를 근거로 실제 지급(PAYMENT)
+--        또는 환불(REFUND)이 처리된 결과만 기록한다.
+-- NOTE : payments에는 대기 상태를 두지 않는다. 처리 대기/승인/보류는 payables가 담당하고,
+--        payments row는 실제 정산 결과가 확인된 뒤 생성한다.
+-- NOTE : cost 1건은 여러 payables로 나뉠 수 있으나, payable 1건은 payment 1건으로만 처리된다.
+-- NOTE : 실제 사람이 여러 번 이체했더라도 ERP 데이터상 payment는 payable 1건당 1건만 기록한다.
+-- NOTE : payment_lines는 본 운영 정책에서는 사용하지 않는다.
+-- NOTE : payment의 업무 출처는 pay_tx_type/pay_method에 따라 해석한다.
+--        CARD 즉시 지급은 pay_ct_sn으로 costs에 직접 연결하고 pay_pbl_sn은 NULL이다.
+--        TRANSFER 지급과 REFUND 환불 확인은 pay_pbl_sn으로 payables에 연결한다.
+--        CASH는 현재 지급 처리 흐름을 서비스로 기획하지 않았으므로 payments에 기록하지 않는다.
+--        현금으로 발생한 비용은 costs에만 등록하고, 실제 현금 출납/증빙 처리 방식은 추후 별도 설계한다.
+--        pay_pbl_sn이 있는 경우 payments.pay_ct_sn은 조회 편의를 위한 cost 연결이며, payables.pbl_ct_sn과 같은 cost를 가리켜야 한다.
 -- ======================================================================
 CREATE TABLE payments (
-  pay_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급/결제 PK',
-  pay_method ENUM('CARD','TRANSFER','CASH')
-    NOT NULL COMMENT '지급 수단(ENUM) | CARD:카드, TRANSFER:계좌이체, CASH:현금',
-  pay_status ENUM('PENDING','PAID','CANCELLED')
-    NOT NULL DEFAULT 'PAID' COMMENT '지급 상태(ENUM) | PENDING:대기, PAID:지급완료, CANCELLED:취소',
-  pay_pt_sn BIGINT UNSIGNED NULL COMMENT '정산/지급 상대 업체 PK(parties) | 네이버/쿠팡 등 정산 주체, 비정형은 예약된 party 사용',
-  pay_bk_sn BIGINT UNSIGNED NULL COMMENT '실제 이체 실행 시 사용된 거래처의 수취 계좌를 식별하는 외래키이다. 실제 지급 결과 기준의 계좌를 기록한다.',
+  pay_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'AP 정산 결과 PK',
+  pay_tx_type ENUM('PAYMENT','REFUND')
+    NOT NULL DEFAULT 'PAYMENT' COMMENT 'AP 정산 결과 유형(ENUM) | PAYMENT:비용 지급 처리 결과, REFUND:환불/차감 확인 처리 결과',
+  pay_method ENUM('CARD','TRANSFER')
+    NOT NULL COMMENT '정산 수단(ENUM) | CARD:카드, TRANSFER:계좌이체. CASH는 현재 payments에 기록하지 않고 costs에만 등록한다.',
+  pay_status ENUM('PROCESSED','CANCELLED')
+    NOT NULL DEFAULT 'PROCESSED' COMMENT 'AP 정산 결과 상태(ENUM) | PROCESSED:처리 완료, CANCELLED:취소/무효',
+  pay_pt_sn BIGINT UNSIGNED NULL COMMENT '정산 상대 업체 PK(parties) | PAYMENT는 지급 상대, REFUND는 환불/차감 상대',
+  pay_bk_sn BIGINT UNSIGNED NULL COMMENT '정산에 사용/확인된 거래처 계좌 PK(bank_accounts). PAYMENT는 수취 계좌, REFUND는 환불 출처/참조 계좌로 사용할 수 있다.',
+  pay_ct_sn BIGINT UNSIGNED NULL COMMENT '정산 근거 비용 PK(costs). CARD 즉시 지급은 이 값으로 직접 연결하고, pay_pbl_sn이 있는 경우 payables.pbl_ct_sn과 같은 cost를 가리켜야 한다.',
+  pay_pbl_sn BIGINT UNSIGNED NULL COMMENT 'AP 정산 처리 요청 PK(payables). TRANSFER 지급 또는 REFUND 환불 확인처럼 재무 처리 요청을 거친 경우 사용한다. payable:payment는 1:1이다.',
 
-  pay_paid_at DATETIME NOT NULL COMMENT '지급 완료일시(업무 이벤트)',
-  pay_amount DECIMAL(18,2) NOT NULL COMMENT '지급 금액',
+  pay_paid_at DATETIME NOT NULL COMMENT '정산 처리일시(업무 이벤트). PAYMENT는 지급 완료일시, REFUND는 환불 확인일시',
+  pay_amount DECIMAL(18,2) NOT NULL COMMENT '정산 금액. 항상 양수로 저장하고, 지급/환불 방향은 pay_tx_type으로 해석한다.',
   pay_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
-  pay_ref_no VARCHAR(32) NULL COMMENT '참조번호(카드 승인번호/이체 거래번호 등)',
-  pay_note VARCHAR(500) NULL COMMENT '메모',
+  pay_ref_no VARCHAR(32) NULL COMMENT '참조번호(카드 승인번호/카드취소번호/이체 거래번호/환불 거래번호 등)',
+  pay_note VARCHAR(500) NULL COMMENT 'AP 정산 결과 메모',
   pay_data_json JSON NULL COMMENT '추가 메타(JSON)',
   pay_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
   pay_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pay_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (pay_sn),
+  UNIQUE KEY uk_payments_pbl (pay_pbl_sn),
+  KEY idx_payments_cost (pay_ct_sn),
   KEY idx_payments_paid_at (pay_paid_at),
   KEY idx_payments_payee (pay_pt_sn),
+  CONSTRAINT fk_payments_cost
+    FOREIGN KEY (pay_ct_sn) REFERENCES costs(ct_sn),
   CONSTRAINT fk_payments_payee
     FOREIGN KEY (pay_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_payments_creator
     FOREIGN KEY (pay_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='지급/결제(카드/이체/현금) 원장';
-
+) COMMENT='AP 정산 결과 원장. 지급(PAYMENT)과 환불(REFUND)의 실제 처리 결과를 기록한다.' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
@@ -455,15 +480,14 @@ CREATE TABLE fx_rates (
   ) COMMENT
 '동일 시점/유형/출처의 환율 스냅샷 중복 방지.
 - 같은 as-of라도 source 또는 type이 다르면 다른 스냅샷으로 공존 가능'
-) COMMENT='환율 스냅샷 정본 테이블 (과거 재현 가능해야 함)';
-
+) COMMENT='환율 스냅샷 정본 테이블 (과거 재현 가능해야 함)' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
 -- TABLE: cost_fx_applications
 -- DESC : 비용 환율 적용(적용환율 고정/감사용)
--- NOTE : 해외 비용은 정산 시점에 적용한 환율과 원화 환산 결과를 고정 저장해 재현/감사를 가능하게 한다.
--- NOTE : applied_fx_rate/as_of_dt/base_amount(KRW) 등은 '그 시점의 적용 결과'이며, 필요 시 fx_rates(fx_sn)로 환율 마스터를 참조한다.
+-- NOTE : 해외 비용은 적용한 환율 스냅샷과 선택 사유를 연결해 재현/감사를 가능하게 한다.
+-- NOTE : 환율 값과 기준 시각은 fx_rates에 저장하고, cost_fx_applications는 fx_sn 및 적용 정책/사유만 저장한다.
 -- ======================================================================
 CREATE TABLE cost_fx_applications (
   cfxa_sn BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'Cost-FX 적용 관계 PK',
@@ -511,152 +535,86 @@ CREATE TABLE cost_fx_applications (
 
   CONSTRAINT fk_cfxa_fx
     FOREIGN KEY (fx_sn) REFERENCES fx_rates(fx_sn)
-) COMMENT='Cost와 환율 스냅샷 간 적용 관계 (링크 + 선택 사유만 기록)';
-
-
--- ======================================================================
--- TABLE: po_cost_links
--- DESC : PO 1건 = cost 1건 정책을 위한 1:1 연결
--- NOTE : po_cost_links는 'PO에 연관된 비용을 빠르게 찾기 위한' 조회/편의 연결이다(원가/마진 계산의 기준이 아님).
--- NOTE : link_type는 지급 단계(선금/잔금)가 아니라 PO 관련 부대비용 성격 분류에만 사용한다(예: FREIGHT, CUSTOMS, INSPECTION, ETC).
--- ======================================================================
-CREATE TABLE po_cost_links (
-  pcl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PO-비용 1:1 연결 PK',
-  po_sn BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders)',
-  ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs) | (정책) PO 1건당 cost 1건',
-
-  pcl_note VARCHAR(500) NULL COMMENT '비고(정책/예외 사유 등)',
-
-  pcl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  pcl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-  PRIMARY KEY (pcl_sn),
-  UNIQUE KEY uk_po_cost_po (po_sn),
-  UNIQUE KEY uk_po_cost_ct (ct_sn),
-  KEY idx_po_cost_links_po (po_sn),
-  KEY idx_po_cost_links_ct (ct_sn),
-
-  CONSTRAINT fk_po_cost_links_po
-    FOREIGN KEY (po_sn) REFERENCES purchase_orders(po_sn),
-  CONSTRAINT fk_po_cost_links_ct
-    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)
-) COMMENT='PO 1건 = cost 1건 정책을 위한 1:1 연결';
+) COMMENT='Cost와 환율 스냅샷 간 적용 관계 (링크 + 선택 사유만 기록)' AUTO_INCREMENT=100;
 
 
 -- ======================================================================
 -- TABLE: payables
--- DESC : 지급 요청 단위(payable). 카드/현금이 아닌 계좌이체 건에 대해서만 생성되는 내부 지급요청 단위
--- NOTE : payables는 내부 '지급 요청 단위'다(결재/보류/대기의 기준).
--- NOTE : 업체의 별도 지급요청 원장을 두지 않으므로, payables는 항상 costs를 근거로 생성하며, 지급결과는 payments에 기록된다.
+-- DESC : AP 정산 처리 요청 단위. 지급 요청(PAYMENT)과 환불 확인 요청(REFUND)을 모두 표현한다.
+-- NOTE : payables는 내부 AP 정산 처리 요청이다(승인/보류/처리 대기의 기준).
+--        테이블명은 payable이지만, 운영 의미는 "payment 관련 처리 요청"으로 해석한다.
+-- NOTE : payables는 항상 costs 1건을 근거로 생성한다. cost 1건은 여러 payables로 나뉠 수 있다.
+-- NOTE : payables 1건은 payments 1건으로 처리된다(1:1 불변). 여러 cost를 한 payable로 묶지 않는다.
+-- NOTE : pbl_request_type으로 요청 성격을 구분한다.
+--        PAYMENT: 비용 지급 처리 요청
+--        REFUND : negative refund cost에 대해 환불 입금/카드취소 확인을 요청
+-- NOTE : 비용 발생/요청 주체가 payable을 취소(CANCELLED)할 수 있는 것은 CREATED 상태뿐이다.
+--        APPROVED는 재무담당자가 언제든 오프라인 지급할 수 있는 실행 가능 상태이므로,
+--        cost 취소를 이유로 업무 주체가 임의로 CANCELLED로 되돌리면 실제 지급과 데이터가 어긋날 수 있다.
+--        APPROVED/ON_HOLD 이후의 CANCELLED 전환은 재무담당자가 오프라인 지급 여부를 확인하고,
+--        협의/정정 근거를 남긴 뒤 수행하는 예외 업무로만 허용한다.
+-- NOTE : ON_HOLD는 요청 해석 보류가 아니라 승인 판단의 한 종류이다.
+--        재무담당자가 즉시 지급 처리할 APPROVED와 달리, 정기결제/일괄결제처럼
+--        나중에 모아서 처리할 건을 업무 화면의 즉시 처리 목록에서 분리하기 위한 상태이다.
 -- ======================================================================
 CREATE TABLE payables (
-  pbl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '지급요청/지급단위 PK(payable)',
+  pbl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'AP 정산 처리 요청 PK(payable)',
+  pbl_ct_sn BIGINT UNSIGNED NOT NULL COMMENT '근거 비용 PK(costs). payable은 반드시 하나의 cost를 근거로 한다.',
+  pbl_request_type ENUM('PAYMENT','REFUND')
+    NOT NULL DEFAULT 'PAYMENT' COMMENT 'AP 정산 처리 요청 유형(ENUM) | PAYMENT:비용 지급 요청, REFUND:환불/차감 확인 요청',
 
-  pbl_payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 대상 업체 PK(parties) | 송금/정산 상대',
-  pbl_payee_bk_sn BIGINT UNSIGNED NULL COMMENT '지급 예정인 금액을 수취할 거래처의 계좌를 식별하는 외래키이다. 지급 승인 시점에 지정된 수취 계좌를 의미한다.',
+  pbl_payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '정산 상대 업체 PK(parties). PAYMENT는 지급 대상, REFUND는 환불/차감 확인 대상이다.',
+  pbl_payee_bk_sn BIGINT UNSIGNED NULL COMMENT '정산 상대 계좌 PK(bank_accounts). PAYMENT는 지급 예정 수취 계좌, REFUND는 환불 출처/확인 참고 계좌로 사용할 수 있다.',
 
-  pbl_payable_status ENUM('CREATED','APPROVED','ON_HOLD','PAID','CANCELLED', 'REJECTED') COMMENT '지급 단위 상태(ENUM) | CREATED:생성, APPROVED:승인, ON_HOLD:보류(parties.pt_is_batch_payment=Y 일때, 대표님이 승인하면 APPROVED가 아닌 ON_HOLD로 된다, PAID:완료, CANCELLED:취소, REJECTED:반려'
+  pbl_status ENUM('CREATED','APPROVED','ON_HOLD','PROCESSED','CANCELLED', 'REJECTED')
     NOT NULL DEFAULT 'CREATED'
-    COMMENT '지급 상태(ENUM) | CREATED:작성, APPROVED:승인, ON_HOLD:보류, PAID:완료, CANCELLED:취소',
+    COMMENT 'AP 정산 처리 요청 상태(ENUM) | CREATED:작성/요청됨, APPROVED:승인 및 즉시 처리 대상, ON_HOLD:승인되었으나 정기/일괄 처리 대상으로 보류, PROCESSED:처리 완료, CANCELLED:취소, REJECTED:반려',
 
   pbl_requested_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees) | 구매/운영/재무 등',
   pbl_approved_by_a_sn BIGINT UNSIGNED NULL COMMENT '승인자 PK(assignees) | 승인 시 설정',
 
-  pbl_requested_at DATETIME NOT NULL COMMENT '지급 요청일시(업무 이벤트)',
+  pbl_requested_at DATETIME NOT NULL COMMENT 'AP 정산 처리 요청일시(업무 이벤트)',
   pbl_approved_at DATETIME NULL COMMENT '승인일시(업무 이벤트)',
-  pbl_due_at DATE NULL COMMENT '지급 예정/기한(업무 이벤트)',
+  pbl_due_at DATE NULL COMMENT '처리 예정일/기한(업무 이벤트). PAYMENT는 지급 예정일, REFUND는 환불 확인 목표일',
 
-  pbl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '지급 통화',
-  pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '지급 대상 총액(업무 기준)',
+  pbl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '정산 통화',
+  pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '정산 처리 요청 금액. 항상 양수로 저장하고, 지급/환불 방향은 pbl_request_type으로 해석한다.',
 
-  /* 편의 필드(선택): payments 합산으로도 계산 가능 */
-  paid_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지급 완료 누적액(편의). 운영 정책상 payable:payment는 1:1이며, payment_payable_allocations로 검증 가능',
-
-  pbl_note VARCHAR(500) NULL COMMENT '재무 메모(지급 사유/특이사항)',
+  pbl_note VARCHAR(500) NULL COMMENT '재무 메모(처리 사유/특이사항)',
 
   pbl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pbl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (pbl_sn),
+  KEY idx_payables_cost (pbl_ct_sn),
   KEY idx_payables_payee (pbl_payee_pt_sn),
-  KEY idx_payables_status (pbl_payable_status),
+  KEY idx_payables_type_status (pbl_request_type, pbl_status),
   KEY idx_payables_due (pbl_due_at),
   KEY idx_payables_requested_by (pbl_requested_by_a_sn),
 
+  CONSTRAINT fk_payables_cost
+    FOREIGN KEY (pbl_ct_sn) REFERENCES costs(ct_sn),
   CONSTRAINT fk_payables_payee
     FOREIGN KEY (pbl_payee_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_payables_requested_by
     FOREIGN KEY (pbl_requested_by_a_sn) REFERENCES assignees(a_sn),
   CONSTRAINT fk_payables_approved_by
     FOREIGN KEY (pbl_approved_by_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='지급 요청 단위(payable). 계좌이체가 필요한 비용에 대해서만 생성되는 내부 지급요청 단위';
-
-
--- ======================================================================
--- TABLE: payable_cost_allocations
--- DESC : payable(이체 지급요청 단위) ↔ cost(원천 비용) 연결
--- NOTE : payable이 어떤 비용을 근거로 생성되었는지와 금액 배분을 명시한다.
--- NOTE : 동일 cost를 여러 payable로 분할하는 경우, payable마다 별도 행으로 기록한다.
--- ======================================================================
-CREATE TABLE payable_cost_allocations (
-  pbca_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payable-cost 배분 PK',
-  pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
-  ct_sn BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs)',
-
-  pbca_amount DECIMAL(18,2) NOT NULL COMMENT '해당 payable이 이 cost를 기준으로 요청한 금액(부분지급 가능)',
-  pbca_note VARCHAR(500) NULL COMMENT '비고',
-
-  pbca_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  pbca_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-  PRIMARY KEY (pbca_sn),
-  UNIQUE KEY uk_payable_cost_alloc (pbl_sn, ct_sn),
-  KEY idx_payable_cost_alloc_pbl (pbl_sn),
-  KEY idx_payable_cost_alloc_ct (ct_sn),
-
-  CONSTRAINT fk_payable_cost_alloc_pbl
-    FOREIGN KEY (pbl_sn) REFERENCES payables(pbl_sn),
-  CONSTRAINT fk_payable_cost_alloc_ct
-    FOREIGN KEY (ct_sn) REFERENCES costs(ct_sn)
-) COMMENT='payable(이체 지급요청 단위)와 cost(원천 비용)의 배분 연결';
-
+) COMMENT='AP 정산 처리 요청 단위. 지급 요청(PAYMENT)과 환불 확인 요청(REFUND)을 모두 표현한다.' AUTO_INCREMENT=100;
 
 /* =======================================================================
- * 6) Payments(실지급 결과) <-> Payables(지급단위) 연결(운영 정책: 1:1)
- *    - 본 시스템에서 payables는 '계좌이체 지급 분할'의 유일한 단위다.
- *    - payables 1건은 payments 1건으로 집행된다(1:1 불변).
- *    - 여러 번 나눠 지급하려면 payables를 여러 건으로 분할한다.
- *    - 카드결제의 경우 invoices와 payables 없이 costs → payments로 바로 연결된다.
+ * 6) Payments(AP 정산 결과) <-> Payables(AP 정산 처리 요청) 연결(운영 정책: 1:1)
+ *    - cost 1건은 여러 payables로 나눠 정산 처리 요청할 수 있다.
+ *    - payables 1건은 payments.pay_pbl_sn으로 payment 1건에만 연결된다(1:1 불변).
+ *    - 실제 사람이 여러 번 처리했더라도 ERP 데이터상 payment는 payable 1건당 1건만 기록한다.
+ *    - CARD 즉시 결제는 payables 없이 payments.pay_ct_sn으로 costs에 바로 연결된다.
+ *    - TRANSFER 지급과 REFUND 환불 확인은 payables를 거쳐 payments.pay_pbl_sn으로 연결된다.
+ *    - CASH는 현재 비용 등록만 허용하며 payments에는 기록하지 않는다.
  * ======================================================================= */
 
--- ======================================================================
--- TABLE: payment_payable_allocations
--- DESC : payment(실지급) ↔ payable(지급단위) 연결(운영 정책: 1:1, 승인 이체 흐름의 경우에 한정)
--- NOTE : payables 1건은 payments 1건으로 집행된다(1:1).
--- NOTE : 지급을 여러 번 나누려면 payables를 여러 건으로 분할한다.
--- NOTE : 이 테이블은 스키마상 N:M 형태로 존재하더라도, 서비스 레벨에서 1:1만 허용/검증한다.
--- ======================================================================
-CREATE TABLE payment_payable_allocations (
-  ppa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'payment-payable 배분 PK',
-  pay_sn BIGINT UNSIGNED NOT NULL COMMENT 'payment PK(payments)',
-  pbl_sn BIGINT UNSIGNED NOT NULL COMMENT 'payable PK(payables)',
-
-  ppa_allocated_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payment가 해당 payable에 귀속되는 금액(운영 정책상 payable 1: payment 1). 일반적으로 payable 총액과 동일',
-  ppa_note VARCHAR(500) NULL COMMENT '비고',
-
-  ppa_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  ppa_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-  PRIMARY KEY (ppa_sn),
-  UNIQUE KEY uk_payment_payable_alloc (pay_sn, pbl_sn),
-  KEY idx_payment_payable_alloc_pay (pay_sn),
-  KEY idx_payment_payable_alloc_pbl (pbl_sn),
-
-  CONSTRAINT fk_payment_payable_alloc_pay
-    FOREIGN KEY (pay_sn) REFERENCES payments(pay_sn),
-  CONSTRAINT fk_payment_payable_alloc_pbl
-    FOREIGN KEY (pbl_sn) REFERENCES payables(pbl_sn)
-) COMMENT='payment(실지급 결과)와 payable(지급단위)의 연결(운영 정책: 1:1). 분할지급은 payable을 여러 건으로 분할하여 처리';
+ALTER TABLE payments
+  ADD CONSTRAINT fk_payments_payable
+    FOREIGN KEY (pay_pbl_sn) REFERENCES payables(pbl_sn);
 
 
 CREATE TABLE tax_invoices (
@@ -687,15 +645,14 @@ CREATE TABLE tax_invoices (
   UNIQUE KEY uk_ti_approval_no (ti_approval_no),
   KEY idx_ti_issue_dt (ti_issue_dt),
   KEY idx_ti_recon_status (ti_recon_status)
-) COMMENT='전자세금계산서(세무 정본) - payments 대사 중심';
-
+) COMMENT='전자세금계산서(세무 정본) - payments 대사 중심' AUTO_INCREMENT=100;
 
 CREATE TABLE tax_invoice_payment_allocations (
-  tipa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '세금계산서↔지급 대사 배분 PK',
-  ti_sn BIGINT UNSIGNED NOT NULL COMMENT '전자세금계산서 PK(tax_invoices)',
-  pay_sn BIGINT UNSIGNED NOT NULL COMMENT '지급 PK(payments)',
+  tipa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '세금계산서↔AP 정산 결과 대사 배분 PK',
+  tipa_ti_sn BIGINT UNSIGNED NOT NULL COMMENT '전자세금계산서 PK(tax_invoices)',
+  tipa_pay_sn BIGINT UNSIGNED NOT NULL COMMENT 'AP 정산 결과 PK(payments). 지급(PAYMENT)과 환불(REFUND)을 모두 대사할 수 있다.',
 
-  tipa_amount DECIMAL(18,3) NOT NULL COMMENT '대사 매칭 금액(부분 매칭 허용)',
+  tipa_amount DECIMAL(18,3) NOT NULL COMMENT '대사 매칭 금액(부분 매칭 허용). 항상 총액 기준 양수로 저장하고, 지급/환불 방향은 payments.pay_tx_type으로 해석한다.',
   tipa_note VARCHAR(500) NULL COMMENT '비고(매칭 규칙/사유/수동조정 메모)',
 
   tipa_create_dt DATETIME NOT NULL COMMENT '생성일시',
@@ -705,11 +662,11 @@ CREATE TABLE tax_invoice_payment_allocations (
 
   -- 같은 ti↔pay 조합이 여러 줄로 쪼개질 필요는 없으므로(부분은 amount로 표현),
   -- 실수 방지로 유니크 권장. (정말 여러 줄이 필요하면 이 제약 제거)
-  UNIQUE KEY uk_tipa (ti_sn, pay_sn),
+  UNIQUE KEY uk_tipa (tipa_ti_sn, tipa_pay_sn),
 
-  KEY idx_tipa_ti (ti_sn),
-  KEY idx_tipa_pay (pay_sn),
+  KEY idx_tipa_ti (tipa_ti_sn),
+  KEY idx_tipa_pay (tipa_pay_sn),
 
-  CONSTRAINT fk_tipa_ti FOREIGN KEY (ti_sn) REFERENCES tax_invoices(ti_sn),
-  CONSTRAINT fk_tipa_pay FOREIGN KEY (pay_sn) REFERENCES payments(pay_sn)
-) COMMENT='전자세금계산서↔payments 대사 배분(부분 매칭/N:M 지원)';
+  CONSTRAINT fk_tipa_ti FOREIGN KEY (tipa_ti_sn) REFERENCES tax_invoices(ti_sn),
+  CONSTRAINT fk_tipa_pay FOREIGN KEY (tipa_pay_sn) REFERENCES payments(pay_sn)
+) COMMENT='전자세금계산서↔AP 정산 결과(payments) 대사 배분(부분 매칭/N:M 지원). 세금계산서 총액과 실제 지급/환불 총액을 대사한다.' AUTO_INCREMENT=100;
