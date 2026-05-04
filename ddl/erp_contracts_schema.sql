@@ -888,6 +888,8 @@ CREATE TABLE rfq_lines (
 
   rfql_supply_type ENUM('SUPPLY_AVAILABLE', 'SUBSTITUTE_OFFERED', 'NOT_HANDLED', 'TEMPORARY_OUT') COMMENT 'SUPPLY_AVAILABLE: 공급 가능, SUBSTITUTE_OFFERED: 대체품 제안, NOT_HANDLED: 취급 불가, TEMPORARY_OUT: 일시 품절',
 
+  rfql_req_note VARCHAR(500) NULL COMMENT '(견적요청) 업체 전달용 비고 필드, rfqp_lines.rfqp_req_note를 복사해와서 사용하기',
+
   /* 견적응답정보 */
   rfql_res_qty DECIMAL(14,3) NOT NULL DEFAULT 0 COMMENT '(견적응답) 수량',
   rfql_res_unit VARCHAR(20) NOT NULL DEFAULT '' COMMENT '(견적응답) 단위(예: EA, SET)',

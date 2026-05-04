@@ -838,15 +838,16 @@ PO 특수 비용 라인이 있으면 cost 생성 시 `po_cost_line_allocations`�
 
 ### 6.0 AP/AR 도메인 경계
 
-`costs -> payables -> payments`는 비용 정산(AP) 도메인이다. 이 흐름은 cost 기반의 지급과 환불을 관리한다.
+이 장의 시나리오는 DDL과 design-guide의 AP 3계층 정책을 전제로 한다.
 
-`receivables -> receipts`는 납품 정산(AR) 도메인이다. 이 흐름은 우리가 받을 돈을 관리한다.
+공통 입력 원칙
 
-`payables`는 테이블명과 달리 지급 요청만 의미하지 않는다. AP 정산 처리 요청이며, `pbl_request_type='PAYMENT'`이면 지급 처리 요청, `pbl_request_type='REFUND'`이면 환불 확인 요청이다.
+- 지급 요청은 `payables.pbl_request_type='PAYMENT'`
+- 환불/차감 확인 요청은 `payables.pbl_request_type='REFUND'`
+- payment 생성 시 `pay_amount`는 처리 총액, `pay_credit_amount`는 그중 크레딧 처리분
+- `pay_method`는 CARD/TRANSFER 처리 계열만 기록
 
-`payments`는 AP 정산 결과 원장이다. `pay_tx_type='PAYMENT'`이면 실제 지급 처리 결과, `pay_tx_type='REFUND'`이면 실제 환불 확인 결과이다. 대기/승인/보류는 `payables`에서 관리하고, `payments`에는 처리 완료 또는 취소된 결과만 기록한다.
-
-`payments`와 `receipts`는 단순히 모든 지출/수입을 담는 전사 현금 출납장 한 쌍이 아니다. 각각 비용 정산과 납품 정산 도메인의 실행 결과이며, 둘을 함께 보면 수입과 지출의 양쪽 흐름을 해석할 수 있다. 은행계좌 잔고장이나 완전한 복식부기 총계정원장은 별도 설계 대상이다.
+AR 납품 정산(`receivables -> receipts`)과 전사 통합 입출금 원장은 이 장의 시나리오 범위가 아니다.
 
 ### 6.1 PO 비용 생성
 
@@ -932,7 +933,8 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 - `pay_ct_sn`: cost PK
 - `pay_pbl_sn`: `NULL`
 - `pay_paid_at`: 지급 완료일시
-- `pay_amount`: 양수
+- `pay_amount`: 처리 총 정산 금액
+- `pay_credit_amount`: 보통 `0`
 - `pay_ccy`
 - `pay_ref_no`: 카드 승인번호 등
 - `pay_note`
@@ -1019,7 +1021,7 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 
 ### 6.7 계좌이체 지급 결과
 
-승인된 payable을 실제 지급하면 payment를 만든다.
+승인된 payable을 지급 또는 크레딧 상계로 처리하면 payment를 만든다.
 
 `payments`
 
@@ -1031,7 +1033,8 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 - `pay_ct_sn`: cost PK
 - `pay_pbl_sn`: payable PK
 - `pay_paid_at`
-- `pay_amount`: 양수
+- `pay_amount`: payable 처리 총액
+- `pay_credit_amount`: 크레딧 상계 사용액. 크레딧을 사용하지 않으면 `0`
 - `pay_ccy`
 - `pay_ref_no`: 이체 거래번호
 - `pay_note`
@@ -1043,7 +1046,9 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 - `pbl_status`: `PROCESSED`
 - `pbl_update_dt`
 
-payable 1건은 payment 1건으로만 집행한다. 실제 처리 금액의 정본은 `payments.pay_amount`다.
+payable 1건은 payment 1건으로만 집행한다. 정산 처리 총액의 정본은 `payments.pay_amount`이고, 그중 크레딧 처리분은 `payments.pay_credit_amount`다.
+
+예: 100만원 지급요청 중 30만원을 크레딧으로 상계하고 70만원을 계좌 처리하면 `pay_amount=1000000`, `pay_credit_amount=300000`, `pay_method='TRANSFER'`로 기록한다.
 
 ### 6.8 하나의 cost를 여러 번 나누어 이체
 
@@ -1111,7 +1116,7 @@ payable 1건은 payment 1건으로만 집행한다. 실제 처리 금액의 정�
 - `pbl_status`: 최초 `CREATED`, 승인 후 `APPROVED` 또는 `ON_HOLD`
 - `pbl_total_amount`: 환불 확인 대상 금액. 양수로 저장한다.
 
-실제 환불 확인
+환불/차감 처리 확인
 
 `payments`
 
@@ -1123,7 +1128,8 @@ payable 1건은 payment 1건으로만 집행한다. 실제 처리 금액의 정�
 - `pay_ct_sn`: refund cost
 - `pay_pbl_sn`: refund payable
 - `pay_paid_at`: 환불 확인일시
-- `pay_amount`: 양수. 실제 환불 확인 금액의 정본이다.
+- `pay_amount`: 환불/차감 처리 총액
+- `pay_credit_amount`: 환불금을 실제로 돌려받지 않고 크레딧으로 장부화한 금액. 실제 입금/카드취소로 처리하면 `0`
 - `pay_ref_no`: 카드취소번호/환불거래번호 등
 
 `payables` update
@@ -1132,6 +1138,12 @@ payable 1건은 payment 1건으로만 집행한다. 실제 처리 금액의 정�
 - `pbl_update_dt`
 
 현금 환급은 아직 서비스 기획 전이므로 `payments`에 기록하지 않는다.
+
+환불/차감 처리 방식
+
+- 실제 계좌 입금 또는 카드취소로 처리: `pay_credit_amount=0`
+- 돈을 받지 않고 향후 지급에서 차감할 크레딧으로 장부화: `pay_credit_amount=pay_amount`
+- 일부는 실제 입금/카드취소, 일부는 크레딧 장부화: `0 < pay_credit_amount < pay_amount`
 
 환불/정정 판단 표
 
@@ -1173,6 +1185,7 @@ payable 1건은 payment 1건으로만 집행한다. 실제 처리 금액의 정�
 - 전체 카드 취소와 동일하다.
 - refund cost의 `ct_price`, `ct_tax`는 부분 취소 금액만큼만 음수로 기록한다.
 - 원 cost와 원 payment는 부분 취소 때문에 수정하지 않는다.
+- 카드 환불은 원칙적으로 카드취소 확인으로 처리하고 `pay_credit_amount=0`으로 둔다. 카드 환불분을 거래처 크레딧으로 장부화하는 운영은 별도 승인 정책이 있을 때만 허용한다.
 
 ### 6.12 계좌이체 지급 취소/환불 시나리오
 
@@ -1203,8 +1216,9 @@ payable 1건은 payment 1건으로만 집행한다. 실제 처리 금액의 정�
 
 실제 돈이 나갔으므로 환불 시나리오다.
 
-- 전체 환불: 원 cost 금액 전체에 해당하는 negative refund cost를 만들고, refund payable을 만든 뒤, 계좌 환불 확인 후 `payments(pay_tx_type='REFUND', pay_method='TRANSFER')`를 만든다.
-- 부분 환불: 실제 돌려받을 금액만큼 negative refund cost를 만들고 동일하게 refund payable/payment를 만든다.
+- 전체 환불: 원 cost 금액 전체에 해당하는 negative refund cost를 만들고, refund payable을 만든 뒤, 계좌 환불 확인 또는 크레딧 장부화 후 `payments(pay_tx_type='REFUND', pay_method='TRANSFER')`를 만든다.
+- 부분 환불: 환불/차감 대상 금액만큼 negative refund cost를 만들고 동일하게 refund payable/payment를 만든다.
+- 계좌 환불을 실제로 받으면 `pay_credit_amount=0`이다. 돈을 받지 않고 향후 지급에서 차감하기로 하면 `pay_credit_amount=pay_amount`로 기록하고, 거래처 크레딧 잔액을 증가시킨다.
 
 #### 일부 금액만 payable로 등록된 경우
 
@@ -1246,7 +1260,7 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 
 ### 6.14 부분환불 금액과 세금계산서 대사
 
-`payments`는 실제 주고받은 총액만 기록한다. 세전/세금 분리는 `payments`에 넣지 않는다.
+`payments.pay_amount`는 실제 현금 이동액이 아니라 payment가 처리한 총 정산 금액이다. `pay_credit_amount`는 그중 크레딧으로 처리한 금액이다. 세전/세금 분리는 `payments`에 넣지 않는다.
 
 세금 구조의 정본
 
@@ -1256,7 +1270,7 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 세금계산서 지급 대사
 
 - 세금계산서 총액은 `tax_invoices.ti_total_amount`다.
-- 실제 지급/환불 총액은 `payments.pay_amount`다.
+- 정산 처리 총액은 `payments.pay_amount`다.
 - 세금계산서와 payment의 매칭 금액은 `tax_invoice_payment_allocations.tipa_amount`다.
 - `pay_tx_type='PAYMENT'`는 양수 방향, `pay_tx_type='REFUND'`는 음수 방향으로 합산해 대사한다.
 
@@ -1267,6 +1281,8 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 - 환불 확인액: refund payment 합계
 - 순 비용: 원 cost 총액 + 자식 refund cost 합계
 - 순 지급액: PAYMENT payment 합계 - REFUND payment 합계
+- 크레딧 잔액 증가: REFUND payment의 `pay_credit_amount`
+- 크레딧 잔액 감소: PAYMENT payment의 `pay_credit_amount`
 
 이 값들은 별도 잔액 필드에 중복 저장하지 않고 조회/검증 로직으로 계산한다.
 
@@ -1275,7 +1291,152 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 - 자식 refund cost 합계 절대값은 원 cost 총액을 넘으면 안 된다.
 - refund payment 합계는 refund payable 금액을 넘으면 안 된다.
 - refund payment 합계는 해당 refund cost 절대금액을 넘으면 안 된다.
-- 실제 지급액보다 더 많이 환불 처리하면 안 된다.
+- 원 지급 payment의 처리 총액보다 더 많이 환불 처리하면 안 된다.
+- `pay_credit_amount`는 `pay_amount`보다 클 수 없다.
+
+### 6.15 거래처 크레딧 잔액과 상계 시나리오
+
+거래처 크레딧 잔액은 환불금을 실제로 받지 않고 향후 지급에서 차감하기로 한 금액의 현재 잔액이다.
+
+정본은 `payments`다.
+
+- REFUND payment의 `pay_credit_amount`: 잔액 증가
+- PAYMENT payment의 `pay_credit_amount`: 잔액 감소
+
+`party_credit_balances`는 현재 잔액 조회를 위한 캐시다.
+
+`party_credit_balances`
+
+- `pcb_pt_sn`: 거래처
+- `pcb_ccy`: 통화. 현재 정책은 거래처별 1개 통화만 허용한다.
+- `pcb_balance_amount`: 현재 크레딧 잔액 캐시
+- `pcb_recalculated_at`: payments 집계 기준 마지막 재계산 시각
+
+운영 규칙
+
+- payment 생성/취소 시 balance를 같이 갱신한다.
+- 불일치하면 `payments` 집계가 정본이고 balance를 재계산한다.
+- 신규 payment의 `pay_ccy`가 기존 `pcb_ccy`와 다르면 크레딧 적립/상계를 막는다.
+- 현재는 거래처별 다통화 크레딧 잔액을 허용하지 않는다.
+- `pcb_balance_amount`는 현재 잔액이므로 항상 0 이상이어야 한다. 증가/감소는 변화량으로 설명하고, 필드값은 차감/가산 후 현재 잔액으로 기록한다.
+
+#### 80만원 환불을 전액 계좌로 받음
+
+`payables`
+
+- `pbl_request_type`: `REFUND`
+- `pbl_total_amount`: `800000`
+
+`payments`
+
+- `pay_tx_type`: `REFUND`
+- `pay_method`: `TRANSFER`
+- `pay_amount`: `800000`
+- `pay_credit_amount`: `0`
+
+`party_credit_balances`
+
+- 변화 없음
+
+#### 80만원 환불을 전액 크레딧으로 장부화
+
+`payables`
+
+- `pbl_request_type`: `REFUND`
+- `pbl_total_amount`: `800000`
+
+`payments`
+
+- `pay_tx_type`: `REFUND`
+- `pay_method`: `TRANSFER`
+- `pay_amount`: `800000`
+- `pay_credit_amount`: `800000`
+
+`party_credit_balances`
+
+- 기존 잔액에 `800000`을 더한다.
+- 반영 후 `pcb_balance_amount`: 기존 잔액 + `800000`
+
+#### 80만원 환불 중 30만원은 계좌로 받고 50만원은 크레딧으로 장부화
+
+`payments`
+
+- `pay_tx_type`: `REFUND`
+- `pay_method`: `TRANSFER`
+- `pay_amount`: `800000`
+- `pay_credit_amount`: `500000`
+
+`party_credit_balances`
+
+- 기존 잔액에 `500000`을 더한다.
+- 반영 후 `pcb_balance_amount`: 기존 잔액 + `500000`
+
+#### 100만원 지급요청을 전액 계좌로 지급
+
+`payables`
+
+- `pbl_request_type`: `PAYMENT`
+- `pbl_total_amount`: `1000000`
+
+`payments`
+
+- `pay_tx_type`: `PAYMENT`
+- `pay_method`: `TRANSFER`
+- `pay_amount`: `1000000`
+- `pay_credit_amount`: `0`
+
+`party_credit_balances`
+
+- 변화 없음
+
+#### 100만원 지급요청 중 80만원은 기존 크레딧으로 상계하고 나머지만 지급
+
+전제: 같은 거래처, 같은 통화의 `party_credit_balances.pcb_balance_amount`가 `800000` 이상이어야 한다.
+
+`payables`
+
+- `pbl_request_type`: `PAYMENT`
+- `pbl_total_amount`: `1000000`
+
+`payments`
+
+- `pay_tx_type`: `PAYMENT`
+- `pay_method`: `TRANSFER`
+- `pay_amount`: `1000000`
+- `pay_credit_amount`: `800000`
+
+`party_credit_balances`
+
+- 기존 잔액에서 `800000`을 차감한다.
+- 반영 후 `pcb_balance_amount`: 기존 잔액 - `800000`
+- 반영 후 `pcb_balance_amount`는 `0` 이상이어야 한다.
+
+#### 100만원 지급요청을 전액 크레딧으로 상계
+
+전제: 같은 거래처, 같은 통화의 `party_credit_balances.pcb_balance_amount`가 `1000000` 이상이어야 한다.
+
+`payments`
+
+- `pay_tx_type`: `PAYMENT`
+- `pay_method`: `TRANSFER`
+- `pay_amount`: `1000000`
+- `pay_credit_amount`: `1000000`
+
+`party_credit_balances`
+
+- 기존 잔액에서 `1000000`을 차감한다.
+- 반영 후 `pcb_balance_amount`: 기존 잔액 - `1000000`
+- 반영 후 `pcb_balance_amount`는 `0` 이상이어야 한다.
+
+크레딧을 전액 사용하더라도 `pay_method`는 `CARD`/`TRANSFER` 처리 계열을 유지한다. 크레딧 사용 여부는 `pay_method`가 아니라 `pay_credit_amount`로만 표현한다.
+
+검증 규칙
+
+- `pay_amount = payables.pbl_total_amount`
+- `0 <= pay_credit_amount <= pay_amount`
+- PAYMENT payment에서 `pay_credit_amount`를 쓰려면 같은 거래처, 같은 통화의 크레딧 잔액이 충분해야 한다.
+- REFUND payment의 `pay_credit_amount`는 거래처 크레딧 잔액을 증가시킨다.
+- PAYMENT payment의 `pay_credit_amount`는 거래처 크레딧 잔액을 감소시킨다.
 
 ---
 
@@ -1387,17 +1548,18 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 
 - `pbl_request_type`: `REFUND`
 - `pbl_status`: `CREATED`, 승인 후 `APPROVED` 또는 `ON_HOLD`
-- 재무담당자가 실제 환불 여부를 확인할 업무 큐 역할을 한다.
+- 재무담당자가 실제 환불 또는 크레딧 장부화 여부를 확인할 업무 큐 역할을 한다.
 
 환불 확인 후 `payments`
 
 - `pay_tx_type`: `REFUND`
 - `pay_status`: `PROCESSED`
-- `pay_amount`: 양수
+- `pay_amount`: 환불/차감 처리 총액
+- `pay_credit_amount`: 크레딧으로 장부화한 금액. 실제 입금/카드취소로 처리하면 `0`
 - `pay_paid_at`: 환불 확인일시
 - `pay_ref_no`: 카드취소번호/환불거래번호 등
 
-이후 refund payable은 `pbl_status='PROCESSED'`로 닫는다. 실제 환불 확인 금액의 정본은 `payments.pay_amount`다.
+이후 refund payable은 `pbl_status='PROCESSED'`로 닫는다. 환불/차감 처리 총액은 `payments.pay_amount`이고, 크레딧 장부화 금액은 `payments.pay_credit_amount`다.
 
 ---
 
@@ -1605,4 +1767,4 @@ PO 문서
 | `purchase_orders` | `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `CANCELLED`, `CLOSED` | 실제 구매 문서 |
 | `costs` | `CREATE`, `CANCEL`, `REFUND` | 비용 원장. 삭제보다 취소/환불 기록 |
 | `payables` | `CREATED`, `APPROVED`, `ON_HOLD`, `PROCESSED`, `CANCELLED`, `REJECTED` | AP 정산 처리 요청. PAYMENT/REFUND는 `pbl_request_type`으로 구분 |
-| `payments` | `PROCESSED`, `CANCELLED` | AP 실제 정산 결과. PAYMENT/REFUND는 `pay_tx_type`으로 구분 |
+| `payments` | `PROCESSED`, `CANCELLED` | AP 정산 처리 결과. PAYMENT/REFUND는 `pay_tx_type`으로 구분 |

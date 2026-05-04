@@ -141,7 +141,7 @@ AP 영역은 비용/환불 근거, 재무 처리 요청, 실제 처리 결과를
 
 - `costs`: AP 정산의 원인/근거. 지급해야 할 비용뿐 아니라 환불/차감 근거가 되는 negative cost도 기록한다.
 - `payables`: AP 정산 처리 요청. 지급 요청(`PAYMENT`)과 환불 확인 요청(`REFUND`)을 모두 담는다.
-- `payments`: AP 실제 정산 결과. 지급 처리 결과(`PAYMENT`)와 환불 확인 결과(`REFUND`)를 모두 담는다.
+- `payments`: AP 정산 처리 결과. 지급 처리 결과(`PAYMENT`)와 환불/차감 처리 결과(`REFUND`)를 모두 담는다.
 
 따라서 지급/환불 처리는 기본적으로 `costs -> payables -> payments`로 흐른다. 단, 카드 즉시결제는 이미 실제 지급이 완료된 결과를 등록하는 것이므로 payable 없이 `costs -> payments`로 바로 기록한다.
 
@@ -157,13 +157,17 @@ AP 영역은 비용/환불 근거, 재무 처리 요청, 실제 처리 결과를
 
 여러 cost를 하나의 payable로 묶는 방식은 현재 정책에서 사용하지 않는다.
 
-### 5.3 Payment는 AP 실제 결과만 기록한다
+### 5.3 Payment는 AP 정산 결과만 기록한다
 
-`payments`에는 대기 상태를 두지 않는다. 대기/승인/보류는 `payables`의 책임이다. `payments.pay_status`는 `PROCESSED` 또는 `CANCELLED`만 사용하며, 실제 정산 결과가 확인된 뒤 row를 만든다.
+`payments`에는 대기 상태를 두지 않는다. 대기/승인/보류는 `payables`의 책임이다. `payments.pay_status`는 `PROCESSED` 또는 `CANCELLED`만 사용하며, 업무상 정산 결과가 확정된 뒤 row를 만든다.
 
-`payments.pay_tx_type='PAYMENT'`는 실제 지급 처리 결과이고, `payments.pay_tx_type='REFUND'`는 실제 환불 확인 결과이다. 금액은 양수로 저장하고, 지급/환불 방향은 `pay_tx_type`으로 해석한다.
+`payments.pay_tx_type='PAYMENT'`는 지급 처리 결과이고, `payments.pay_tx_type='REFUND'`는 환불/차감 처리 결과이다. `payments.pay_amount`는 이번 payment가 처리한 총 정산 금액이고, `payments.pay_credit_amount`는 그중 크레딧으로 처리한 금액이다. 지급/환불 방향은 `pay_tx_type`으로 해석하고, 카드/계좌 처리 계열은 `pay_method`로 해석한다. `pay_method`는 크레딧 적립/상계 여부를 표현하지 않는다.
 
-세금계산서 대사는 `payments`에 세전/세금을 나누어 저장하지 않고 총액 기준으로 수행한다. 세금계산서 총액은 `tax_invoices.ti_total_amount`, 실제 지급/환불 총액은 `payments.pay_amount`, 매칭 금액은 `tax_invoice_payment_allocations.tipa_amount`로 비교한다.
+거래처 크레딧 잔액은 별도 상세 원장으로 이중 기록하지 않는다. 정본은 `payments`이며, REFUND payment의 `pay_credit_amount`는 크레딧 잔액을 증가시키고, PAYMENT payment의 `pay_credit_amount`는 크레딧 잔액을 감소시킨다. `party_credit_balances`는 이 집계 결과를 빠르게 조회하기 위한 거래처별 현재 잔액 캐시다.
+
+현재 정책은 거래처별 1개 통화의 크레딧 잔액만 허용한다. 따라서 `party_credit_balances`의 유니크 기준은 `pcb_pt_sn`이며, 다통화 크레딧 잔액은 추후 확장 대상이다.
+
+세금계산서 대사는 `payments`에 세전/세금을 나누어 저장하지 않고 정산 처리 총액 기준으로 수행한다. 세금계산서 총액은 `tax_invoices.ti_total_amount`, 정산 처리 총액은 `payments.pay_amount`, 매칭 금액은 `tax_invoice_payment_allocations.tipa_amount`로 비교한다.
 
 ### 5.4 Cost의 출처는 `PROJECT`와 `PO`로 나눈다
 

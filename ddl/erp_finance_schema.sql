@@ -369,20 +369,29 @@ CREATE TABLE bank_accounts (
 -- ======================================================================
 -- TABLE: payments
 -- DESC : AP 정산 결과 원장(지급/환불)
--- NOTE : payments는 AP(비용 정산) 도메인의 실제 정산 결과 원장이다.
---        전사 전체 입출금 원장이 아니라, costs/payables를 근거로 실제 지급(PAYMENT)
---        또는 환불(REFUND)이 처리된 결과만 기록한다.
+-- NOTE : payments는 AP(비용 정산) 도메인의 정산 처리 결과 원장이다.
+--        전사 전체 입출금 원장이 아니라, costs/payables를 근거로 지급(PAYMENT)
+--        또는 환불/차감(REFUND)이 처리된 결과만 기록한다.
 -- NOTE : payments에는 대기 상태를 두지 않는다. 처리 대기/승인/보류는 payables가 담당하고,
---        payments row는 실제 정산 결과가 확인된 뒤 생성한다.
+--        payments row는 실제 업무상 정산 결과가 확정된 뒤 생성한다.
 -- NOTE : cost 1건은 여러 payables로 나뉠 수 있으나, payable 1건은 payment 1건으로만 처리된다.
 -- NOTE : 실제 사람이 여러 번 이체했더라도 ERP 데이터상 payment는 payable 1건당 1건만 기록한다.
 -- NOTE : payment_lines는 본 운영 정책에서는 사용하지 않는다.
--- NOTE : payment의 업무 출처는 pay_tx_type/pay_method에 따라 해석한다.
---        CARD 즉시 지급은 pay_ct_sn으로 costs에 직접 연결하고 pay_pbl_sn은 NULL이다.
---        TRANSFER 지급과 REFUND 환불 확인은 pay_pbl_sn으로 payables에 연결한다.
---        CASH는 현재 지급 처리 흐름을 서비스로 기획하지 않았으므로 payments에 기록하지 않는다.
+-- NOTE : payment의 업무 방향은 pay_tx_type으로 해석한다.
+--        PAYMENT는 비용 지급 처리 결과, REFUND는 환불/차감 처리 결과이다.
+-- NOTE : payment의 처리 수단 계열은 pay_method로 해석한다.
+--        CARD는 카드 처리 계열, TRANSFER는 계좌이체 처리 계열이다.
+--        크레딧 적립/상계 여부와 금액은 pay_credit_amount로 표현하며,
+--        pay_method에 CREDIT/OFFSET 같은 별도 값을 두지 않는다.
+-- NOTE : pay_amount는 이번 payment가 처리한 총 정산 금액이다.
+--        pay_credit_amount는 pay_amount 중 크레딧으로 처리한 금액이다.
+--        REFUND에서는 크레딧 적립액, PAYMENT에서는 크레딧 상계 사용액으로 해석한다.
+-- NOTE : CARD 즉시 지급은 pay_ct_sn으로 costs에 직접 연결하고 pay_pbl_sn은 NULL일 수 있다.
+--        payable을 거쳐 생성된 payment는 pay_pbl_sn으로 payables에 연결한다.
+--        pay_pbl_sn이 있는 경우 payments.pay_ct_sn은 조회 편의를 위한 cost 연결이며,
+--        payables.pbl_ct_sn과 같은 cost를 가리켜야 한다.
+-- NOTE : CASH는 현재 지급 처리 흐름을 서비스로 기획하지 않았으므로 payments에 기록하지 않는다.
 --        현금으로 발생한 비용은 costs에만 등록하고, 실제 현금 출납/증빙 처리 방식은 추후 별도 설계한다.
---        pay_pbl_sn이 있는 경우 payments.pay_ct_sn은 조회 편의를 위한 cost 연결이며, payables.pbl_ct_sn과 같은 cost를 가리켜야 한다.
 -- ======================================================================
 CREATE TABLE payments (
   pay_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'AP 정산 결과 PK',
@@ -390,17 +399,23 @@ CREATE TABLE payments (
     NOT NULL DEFAULT 'PAYMENT' COMMENT 'AP 정산 결과 유형(ENUM) | PAYMENT:비용 지급 처리 결과, REFUND:환불/차감 확인 처리 결과',
   pay_method ENUM('CARD','TRANSFER')
     NOT NULL COMMENT '정산 수단(ENUM) | CARD:카드, TRANSFER:계좌이체. CASH는 현재 payments에 기록하지 않고 costs에만 등록한다.',
+  pay_amount DECIMAL(18,2) NOT NULL COMMENT '이번 payment가 처리한 총 정산 금액. payables.pbl_total_amount와 일치해야 한다. 항상 양수. 지급/환불 방향은 pay_tx_type으로 해석한다.',
+  pay_credit_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'pay_amount 중 크레딧으로 처리한 금액. REFUND에서는 크레딧 적립액, PAYMENT에서는 크레딧 상계 사용액. 항상 0 이상',
+
   pay_status ENUM('PROCESSED','CANCELLED')
     NOT NULL DEFAULT 'PROCESSED' COMMENT 'AP 정산 결과 상태(ENUM) | PROCESSED:처리 완료, CANCELLED:취소/무효',
   pay_pt_sn BIGINT UNSIGNED NULL COMMENT '정산 상대 업체 PK(parties) | PAYMENT는 지급 상대, REFUND는 환불/차감 상대',
-  pay_bk_sn BIGINT UNSIGNED NULL COMMENT '정산에 사용/확인된 거래처 계좌 PK(bank_accounts). PAYMENT는 수취 계좌, REFUND는 환불 출처/참조 계좌로 사용할 수 있다.',
   pay_ct_sn BIGINT UNSIGNED NULL COMMENT '정산 근거 비용 PK(costs). CARD 즉시 지급은 이 값으로 직접 연결하고, pay_pbl_sn이 있는 경우 payables.pbl_ct_sn과 같은 cost를 가리켜야 한다.',
-  pay_pbl_sn BIGINT UNSIGNED NULL COMMENT 'AP 정산 처리 요청 PK(payables). TRANSFER 지급 또는 REFUND 환불 확인처럼 재무 처리 요청을 거친 경우 사용한다. payable:payment는 1:1이다.',
+  pay_pbl_sn BIGINT UNSIGNED NULL COMMENT 'AP 정산 처리 요청 PK(payables). TRANSFER 지급 또는 REFUND 환불 확인처럼 재무 처리 요청을 거친 경우 사용한다. 카드 즉시 지급은 NULL일 수 있다. payable:payment는 1:1이다.',
 
   pay_paid_at DATETIME NOT NULL COMMENT '정산 처리일시(업무 이벤트). PAYMENT는 지급 완료일시, REFUND는 환불 확인일시',
-  pay_amount DECIMAL(18,2) NOT NULL COMMENT '정산 금액. 항상 양수로 저장하고, 지급/환불 방향은 pay_tx_type으로 해석한다.',
   pay_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
   pay_ref_no VARCHAR(32) NULL COMMENT '참조번호(카드 승인번호/카드취소번호/이체 거래번호/환불 거래번호 등)',
+-- 계좌정보는 바뀔수 있으므로 FK로 연결하지 않고 스냅샷으로 보존한다.
+--  pay_bk_sn BIGINT UNSIGNED NULL COMMENT '정산에 사용/확인된 거래처 계좌 PK(bank_accounts). PAYMENT는 수취 계좌, REFUND는 환불 출처/참조 계좌로 사용할 수 있다.',
+  pay_bank_name VARCHAR(80) NULL COMMENT '정산 당시 은행명 스냅샷. pay_method=TRANSFER일 때 bank_accounts에서 복사하거나 수동 입력한다.',
+  pay_account_number VARCHAR(80) NULL COMMENT '정산 당시 계좌번호 스냅샷. 통장 조회/거래처 매칭과 과거 payment 표시의 기준으로 사용한다.',
+  pay_account_holder_name VARCHAR(120) NULL COMMENT '정산 당시 예금주/계좌명 스냅샷. bank_accounts 변경/거래처 통합 이후에도 payment 당시 정보를 보존한다.',
   pay_note VARCHAR(500) NULL COMMENT 'AP 정산 결과 메모',
   pay_data_json JSON NULL COMMENT '추가 메타(JSON)',
   pay_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
@@ -417,7 +432,29 @@ CREATE TABLE payments (
     FOREIGN KEY (pay_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_payments_creator
     FOREIGN KEY (pay_a_sn) REFERENCES assignees(a_sn)
-) COMMENT='AP 정산 결과 원장. 지급(PAYMENT)과 환불(REFUND)의 실제 처리 결과를 기록한다.' AUTO_INCREMENT=100;
+) COMMENT='AP 정산 결과 원장. 지급(PAYMENT)과 환불(REFUND)의 처리 결과를 기록하며, 실제 외부 입출금과 크레딧 적립/상계를 함께 표현한다.' AUTO_INCREMENT=100;
+
+
+CREATE TABLE party_credit_balances
+(
+    pcb_sn              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '거래처 크레딧 잔액 PK',
+
+    pcb_pt_sn           BIGINT UNSIGNED NOT NULL COMMENT '거래처 PK(parties)',
+    pcb_ccy             CHAR(3)         NOT NULL DEFAULT 'KRW' COMMENT '통화',
+    pcb_balance_amount  DECIMAL(18, 2)  NOT NULL DEFAULT 0 COMMENT '현재 크레딧 잔액 캐시. 정본은 payments.pay_credit_amount 집계',
+
+    pcb_recalculated_at DATETIME        NULL COMMENT 'payments 집계 기준으로 잔액을 마지막 재계산한 일시',
+    pcb_note            VARCHAR(500)    NULL COMMENT '잔액 메모',
+
+    pcb_create_dt       DATETIME        NOT NULL COMMENT '레코드 생성일시',
+    pcb_update_dt       DATETIME        NOT NULL COMMENT '레코드 수정일시',
+
+    PRIMARY KEY (pcb_sn),
+    UNIQUE KEY uk_party_credit_balance_pt (pcb_pt_sn), -- 거래처별 여러 CURRENCY별 잔액을 담고 싶다면 uk를 바꿔야함
+
+    CONSTRAINT fk_pcb_pt
+        FOREIGN KEY (pcb_pt_sn) REFERENCES parties (pt_sn)
+) COMMENT ='거래처별 상계 가능 크레딧 현재 잔액 캐시. 정본은 payments의 pay_credit_amount 집계' AUTO_INCREMENT = 100;
 
 
 -- ======================================================================
