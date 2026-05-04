@@ -601,7 +601,10 @@ CREATE TABLE payables (
     NOT NULL DEFAULT 'PAYMENT' COMMENT 'AP 정산 처리 요청 유형(ENUM) | PAYMENT:비용 지급 요청, REFUND:환불/차감 확인 요청',
 
   pbl_payee_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '정산 상대 업체 PK(parties). PAYMENT는 지급 대상, REFUND는 환불/차감 확인 대상이다.',
-  pbl_payee_bk_sn BIGINT UNSIGNED NULL COMMENT '정산 상대 계좌 PK(bank_accounts). PAYMENT는 지급 예정 수취 계좌, REFUND는 환불 출처/확인 참고 계좌로 사용할 수 있다.',
+--  pbl_payee_bk_sn BIGINT UNSIGNED NULL COMMENT '정산 상대 계좌 PK(bank_accounts). PAYMENT는 지급 예정 수취 계좌, REFUND는 환불 출처/확인 참고 계좌로 사용할 수 있다.',
+  pbl_bank_name VARCHAR(80) NULL COMMENT '정산 당시 은행명 스냅샷. pay_method=TRANSFER일 때 bank_accounts에서 복사하거나 수동 입력한다.',
+  pbl_account_number VARCHAR(80) NULL COMMENT '정산 당시 계좌번호 스냅샷. 통장 조회/거래처 매칭과 과거 payables 표시의 기준으로 사용한다.',
+  pbl_account_holder_name VARCHAR(120) NULL COMMENT '정산 당시 예금주/계좌명 스냅샷. bank_accounts 변경/거래처 통합 이후에도 payables 당시 정보를 보존한다.',
 
   pbl_status ENUM('CREATED','APPROVED','ON_HOLD','PROCESSED','CANCELLED', 'REJECTED')
     NOT NULL DEFAULT 'CREATED'
