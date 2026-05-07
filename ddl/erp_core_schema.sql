@@ -98,6 +98,7 @@ create unique index uk_cfg_biz_key
 CREATE TABLE departments (
   d_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '부서 PK',
   d_name VARCHAR(100) NOT NULL COMMENT '부서명',
+  d_biz_cd ENUM('PROCUREMENT', 'MRO') NOT NULL COMMENT '사업부 식별자(코드값, 예: PROCUREMENT, MRO)',
   d_manager_a_sn BIGINT UNSIGNED NULL COMMENT '부서 매니저(팀장) 담당자 PK',
   d_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   d_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
