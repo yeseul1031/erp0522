@@ -722,118 +722,15 @@ CREATE TABLE inhouse_work_orders (
     FOREIGN KEY (iwo_ic_sn) REFERENCES inhouse_cases(ic_sn)
 ) COMMENT='자체제작 작업지시/공정' AUTO_INCREMENT=100;
 
--- ======================================================================
--- TABLE: rfq_plans (rfqp)
--- DESC : 견적기안(견적요청서 계획 마스터)
--- NOTE : rfq는 단독으로 직접 생성하는 것이 아닌, 견적기안을 통해서 1)어떤 물품들을 견적을 낼지=견적기안항목(rfqp_lines, 이하 rfqpl), 2)어느 업체들에게 요청할지=견적대상업체(rfqp_vendors, 이하 rfqpv), 2가지를 계획한 후,
--- '생성'버튼을 누를때, 그때 rfqp의 정보를 토대로 rfqs와 rfq_lines들을 생성한다. '생성' 후에는 견적기안항목(rfqp_lines) 항목을 추가/수정은 해도, 삭제는 안된다. 추가/수정시, rfq_lines도 같이 수정해줘야한다.
--- 견적 기안은 사용자에 종속된다. 퇴사나 프로젝트 이전시에 전환하지 않는다. 과거 견적 정보는 물품 관리 고도화를 통해 우회하자.
--- ======================================================================
-CREATE TABLE rfq_plans (
-    rfqp_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ Plan PK(견적기안)',
-    rfqp_name VARCHAR(64) NOT NULL COMMENT '견적기안명=견적서명, 생성 이후에는 변경불가',
-    rfqp_nick VARCHAR(32) NOT NULL COMMENT '견적기안 별칭(내부 바구니(?)용, 예: "그룹1")',
-    rfqp_choice_pt_sn BIGINT UNSIGNED NULL COMMENT '선택된 업체 PK(parties) | 견적기안 작성 시, 여러 후보 업체 중에서 최종적으로 선택된 업체가 있을 때 설정',
-    rfqp_rfq_sn BIGINT UNSIGNED NULL COMMENT '선택된 RFQ PK',
-    rfqp_status ENUM('DRAFT', 'DONE') NOT NULL COMMENT '견적기안 상태(ENUM) | DRAFT:작업중, DONE:완료(rfq생성됨)',
-    rfqp_visible ENUM('Y','N') NOT NULL DEFAULT 'Y' COMMENT '견적 기안 상태와 기안바구니(왼쪽 리스트)에 소속 여부는 별개임. 목록에서 명시적으로 뺄때 안보임',
-    rfqp_a_sn BIGINT UNSIGNED NOT NULL COMMENT 'ASSIGNEE PK',
-    rfqp_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '세금 처리 종류| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
-    rfqp_req_note VARCHAR(500) NOT NULL COMMENT '업체 전달용 비고/요청사항',
-    rfqp_note VARCHAR(500) NOT NULL COMMENT '내부용 비고',
-    rfqp_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-    rfqp_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-    PRIMARY KEY (rfqp_sn),
-
-    KEY idx_rfqp_status (rfqp_status),
-    KEY idx_rfqp_visible (rfqp_a_sn, rfqp_visible),
-
-    CONSTRAINT fk_rfqp_a FOREIGN KEY (rfqp_a_sn) REFERENCES assignees(a_sn)
-) COMMENT '견적기안(견적요청서 계획 마스터)' AUTO_INCREMENT=100;
-
--- ======================================================================
--- TABLE: rfqp_lines (rfqpl)
--- DESC : 견적기안 항목들
--- NOTE : rfq_plans의 각 항목으로, 어떤 품목을 어떤 수량으로 견적 낼지 계획하는 영역이다. rfq_plans와 1:N 관계이다. rfq_plans에서 '전개'를 할 때, 이 테이블의 각 항목을 기준으로 업체별 rfq_lines 응답 슬롯이 생성된다.
---        rfq_lines는 요청 품목 정보를 복사해 보존하는 스냅샷 테이블이 아니다. 업체가 웹에서 확인하는 요청 품목/규격/수량 정보는 rfqp_lines의 현재 값을 참조해 표시한다.
---        견적서는 계약서가 아니며 가격/공급 가능성 확인을 위한 업무 문서이다. 실제 계약적 정본은 purchase_orders/po_lines이다.
---        따라서 견적 요청 내용과 업체 응답 사이에 발생할 수 있는 약간의 불일치는 운영상 감수하고, 최종 계약/구매 값은 PO에서 확정한다.
--- 견적기안은 각 SCL 수량의 합이다. 최소구매수량 같은 조정은 발주서에서 진행한다. 여기선 납품 기준 수량 계획과 단가 계획만 한다.
--- NOTE : rfq_plans/rfqp_lines는 내부 견적기안이며, rfqs/rfq_lines는 특정 업체에게 실제 발송되거나 회신 받은 견적 요청/응답이다.
--- ======================================================================
-CREATE TABLE rfqp_lines (
-    rfqpl_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ Plan Line PK(견적기안 항목)',
-    rfqpl_rfqp_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ Plan PK(견적기안)',
-    rfqpl_no INT NOT NULL COMMENT 'RFQ 내 줄번호',
-    rfqpl_g_sn BIGINT UNSIGNED NOT NULL COMMENT 'GOODS PK',
-
-    /* 견적요청 시점의 정보 스냅샷 */
-    rfqpl_manufacturer_name VARCHAR(128) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
-    rfqpl_name VARCHAR(128) NOT NULL COMMENT '상품명(카탈로그명)',
-    rfqpl_model_no VARCHAR(32) NULL COMMENT '모델번호',
-    rfqpl_spec TEXT NOT NULL COMMENT '규격/옵션 TEXT',
-    rfqpl_coo VARCHAR(48) NULL COMMENT '소재지(Country of Origin)',
-
-    /* 견적요청정보 */
-    rfqpl_req_name VARCHAR(128) NOT NULL COMMENT '(견적요청) 품목명(예: 십자 드라이버)',
-    rfqpl_req_model VARCHAR(128) NOT NULL default '' COMMENT '(견적요청) 모델명',
-    rfqpl_req_manufacturer_name VARCHAR(128) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
-    rfqpl_req_spec_name VARCHAR(128) NULL COMMENT '제조사명(텍스트, 예: 삼성전자 / Panasonic / 华为)',
-    rfqpl_req_qty DECIMAL(14,3) NOT NULL COMMENT '(견적요청) 수량(납품 약속 수량)',
-    rfqpl_req_unit VARCHAR(20) NULL COMMENT '(견적요청) 단위(예: EA, SET)',
-    rfqpl_req_note VARCHAR(500) NULL COMMENT '(견적요청) 라인 특이사항/요청사항(업체 전달용)',
-
-    rfqpl_note VARCHAR(500) NULL COMMENT '비고(내부용)',
-    rfqpl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-    rfqpl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-    PRIMARY KEY (rfqpl_sn),
-
-    KEY idx_rfqpl_rfqp (rfqpl_rfqp_sn),
-    KEY idx_rfqpl_g (rfqpl_g_sn),
-
-    UNIQUE KEY uk_rfqpl_rfqp_no (rfqpl_rfqp_sn, rfqpl_no), -- 같은 견적기안 내에서 줄번호는 유니크해야 한다.
-
-    CONSTRAINT fk_rfqpl_rfqp FOREIGN KEY (rfqpl_rfqp_sn) REFERENCES rfq_plans(rfqp_sn),
-    CONSTRAINT fk_rfqpl_g FOREIGN KEY (rfqpl_g_sn) REFERENCES goods(g_sn)
-
-) COMMENT '견적기안 항목들' AUTO_INCREMENT=100;
-
--- ======================================================================
--- TABLE: rfqp_vendors (rfqpv)
--- DESC : 견적대상업체
--- NOTE : rfq_plans의 각 항목으로, 어떤 업체들에게 견적 요청할지 계획하는 영역이다. rfq_plans와 1:N 관계이다. rfq_plans에서 '전개'를 할 때, 이 테이블의 각 항목이 rfqv_vendors로 복사되어서 실제 견적 요청에 사용된다.
--- ======================================================================
-CREATE TABLE rfqp_vendors
-(
-    rfqpv_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ Plan Vendor=Parties PK',
-    rfqpv_rfqp_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ Plan PK(견적기안)',
-    rfqpv_pt_sn BIGINT UNSIGNED NOT NULL COMMENT '업체 PK(parties)',
-    rfqpv_rfq_sn BIGINT UNSIGNED NULL COMMENT 'rfqs PK, 생성 눌렀을때 값이 들어감',
-
-    rfqpv_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-    rfqpv_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-    PRIMARY KEY (rfqpv_sn),
-
-    KEY idx_rfqpv_rfqp (rfqpv_rfqp_sn),
-    KEY idx_rfqpv_pt (rfqpv_pt_sn),
-
-    CONSTRAINT fk_rfqpv_rfqp FOREIGN KEY (rfqpv_rfqp_sn) REFERENCES rfq_plans(rfqp_sn),
-    CONSTRAINT fk_rfqpv_pt FOREIGN KEY (rfqpv_pt_sn) REFERENCES parties(pt_sn)
-
-) COMMENT '견적대상업체' AUTO_INCREMENT=100;
 
 -- ======================================================================
 -- TABLE: rfqs
 -- DESC : RFQ(견적요청서) 헤더 - 국내/해외 통합
--- NOTE : rfqs는 견적기안(rfq_plans)에서 특정 업체별로 생성된 실제 견적 요청/회신 컨테이너이다.
---        업체별 회신 가격, 세금, 공급 가능 여부, 대체품 제안은 rfq_lines에 기록한다.
+-- 라인별 회신 가격, 세금, 공급 가능 여부, 대체품 제안은 rfq_lines에 기록한다.
 -- ======================================================================
 CREATE TABLE rfqs (
   rfq_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ PK(견적요청서) - 국내/해외 공용',
-  rfp_rfqp_sn BIGINT UNSIGNED NOT NULL COMMENT '견적기안 PK(rfq_plans) | 이 RFQ가 어떤 견적기안에서 생성되었는지 추적',
+  rfq_name VARCHAR(64) NOT NULL COMMENT 'RFQ명/견적서명',
 
 --  rfq_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
 
@@ -856,7 +753,7 @@ CREATE TABLE rfqs (
   rfq_replied_at DATETIME NULL COMMENT '회신일시(업무 이벤트)',
 --  rfq_reply_lead_time_days INT NULL COMMENT '회신 납기(리드타임) 일수(선택)',
 
-  rfq_req_pub_note VARCHAR(500) NULL COMMENT 'RFQ 요청 메모(견적기안과 별개의 추가로 개별 업체 전달용이 필요할때)',
+  rfq_req_pub_note VARCHAR(500) NULL COMMENT 'RFQ 요청 메모(업체 전달용 비고)',
   rfq_res_pub_note VARCHAR(500) NULL COMMENT 'RFQ 응답 메모(업체가 보낸 코멘트)',
   rfq_note VARCHAR(500) NULL COMMENT 'RFQ 메모(내부 전용)',
 
@@ -874,23 +771,36 @@ CREATE TABLE rfqs (
 
 -- ======================================================================
 -- TABLE: rfq_lines
--- DESC : RFQ 라인(업체별 응답 슬롯) - 국내/해외 통합
--- NOTE : rfq_lines는 업체가 입력할 수 있는 응답 필드만 보유한다.
---        요청 품목/규격/수량/단위 등 제품 정보는 rfqp_lines를 참조해 표시하며, rfqp_lines가 수정되면 업체 화면에도 즉시 반영된다.
---        따라서 rfq_lines는 "요청 스냅샷"이 아니라 "특정 업체 RFQ에서 특정 rfqp_line에 대한 응답값"이다.
+-- DESC : RFQ 라인(라인별 요청/응답 슬롯) - 국내/해외 통합
+-- NOTE : rfq_lines는 견적서의 각 라인별 업체에 요청한 정보와 응답받은 정보를 통합하여 보유한다.
 --        견적 단계의 값은 계약 정본이 아니며, 최종 수량/단가/세금/통화/납기는 PO 라인에서 확정한다.
 --        과거 특정 시점에 업체가 본 요청서를 재현해야 하면, 발송 문서/PDF 등을 documents + document_links로 보존한다.
 -- ======================================================================
 CREATE TABLE rfq_lines (
   rfql_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 PK(업체에 보낸 실제 1줄) - 국내/해외 공용',
   rfql_rfq_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs)',
-  rfql_rfqpl_sn BIGINT UNSIGNED NOT NULL COMMENT '견적기안 항목 PK(rfqp_lines) | 이 RFQ 라인이 어떤 견적기안 항목에서 생성되었는지 추적',
 
-  rfql_supply_type ENUM('SUPPLY_AVAILABLE', 'SUBSTITUTE_OFFERED', 'NOT_HANDLED', 'TEMPORARY_OUT') COMMENT 'SUPPLY_AVAILABLE: 공급 가능, SUBSTITUTE_OFFERED: 대체품 제안, NOT_HANDLED: 취급 불가, TEMPORARY_OUT: 일시 품절',
+  rfql_no INT NOT NULL COMMENT 'RFQ 내 줄번호',
+  rfql_g_sn BIGINT UNSIGNED NOT NULL COMMENT 'GOODS PK',
 
-  rfql_req_note VARCHAR(500) NULL COMMENT '(견적요청) 업체 전달용 비고 필드, rfqp_lines.rfqp_req_note를 복사해와서 사용하기',
+    /* 견적요청 시점의 상품/요청 정보 */
+  rfql_manufacturer_name VARCHAR(128) NULL COMMENT '제조사명 스냅샷(텍스트)',
+  rfql_name VARCHAR(128) NOT NULL COMMENT '상품명 스냅샷(카탈로그명)',
+  rfql_model_no VARCHAR(32) NULL COMMENT '모델번호 스냅샷',
+  rfql_spec TEXT NOT NULL COMMENT '규격/옵션 TEXT 스냅샷',
+  rfql_coo VARCHAR(48) NULL COMMENT '소재지/원산지(Country of Origin)',
+
+    /* 견적요청정보 */
+  rfql_req_name VARCHAR(128) NOT NULL COMMENT '(견적요청) 품목명',
+  rfql_req_model VARCHAR(128) NOT NULL DEFAULT '' COMMENT '(견적요청) 모델명',
+  rfql_req_manufacturer_name VARCHAR(128) NULL COMMENT '(견적요청) 제조사명',
+  rfql_req_spec_name VARCHAR(128) NULL COMMENT '(견적요청) 규격/스펙명',
+  rfql_req_qty DECIMAL(14,3) NOT NULL COMMENT '(견적요청) 수량',
+  rfql_req_unit VARCHAR(20) NULL COMMENT '(견적요청) 단위',
+  rfql_req_note VARCHAR(500) NULL COMMENT '(견적요청) 업체 전달용 비고 필드',
 
   /* 견적응답정보 */
+  rfql_supply_type ENUM('SUPPLY_AVAILABLE', 'SUBSTITUTE_OFFERED', 'NOT_HANDLED', 'TEMPORARY_OUT') COMMENT 'SUPPLY_AVAILABLE: 공급 가능, SUBSTITUTE_OFFERED: 대체품 제안, NOT_HANDLED: 취급 불가, TEMPORARY_OUT: 일시 품절',
   rfql_res_qty DECIMAL(14,3) NOT NULL DEFAULT 0 COMMENT '(견적응답) 수량',
   rfql_res_unit VARCHAR(20) NOT NULL DEFAULT '' COMMENT '(견적응답) 단위(예: EA, SET)',
   rfql_res_unit_price DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '(견적응답) 견적받은 단가 (세금 제외)',
@@ -901,46 +811,56 @@ CREATE TABLE rfq_lines (
   rfql_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
 
   PRIMARY KEY (rfql_sn),
-  UNIQUE KEY uk_rfq_lines (rfql_rfq_sn, rfql_rfqpl_sn),
-  CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfql_rfq_sn) REFERENCES rfqs(rfq_sn),
-  CONSTRAINT fk_rfq_lines_rfqpl FOREIGN KEY (rfql_rfqpl_sn) REFERENCES rfqp_lines(rfqpl_sn)
-) COMMENT='RFQ 라인(업체별 응답 슬롯). 요청 정보는 rfqp_lines를 참조하고, 본 테이블은 업체 응답값만 보유한다.' AUTO_INCREMENT=100;
+  CONSTRAINT fk_rfq_lines_rfq FOREIGN KEY (rfql_rfq_sn) REFERENCES rfqs(rfq_sn)
+) COMMENT='RFQ 라인(업체별 응답 슬롯)' AUTO_INCREMENT=100;
 
 -- ======================================================================
--- TABLE: rfqp_allocations
--- DESC : RFQPL 라인 배분(여러 sc 혼합 RFQ 지원)
--- NOTE : allocated_qty(및 합계)는 sc_required_qty(목표/참조)와 불일치할 수 있음(정상). 해석 기준은 sourcing_cases(Execution & Quantity Interpretation).
+-- NOTE : RFQ 라인이 어떤 수급 실행 라인(sourcing_case_lines)에 귀속되는지 기록한다.
+--        하나의 RFQ 라인은 여러 SCL을 모아 견적 요청할 수 있다.
+--        SCL은 수급 실행의 최소 단위이므로 정상 서비스 플로우에서는 쪼개거나 중복 진행하지 않는다.
+--        다만 비교견적, 재견적, 취소 후 재시도, 문제 발생 후 타 업체 재진행 같은 이력/예외 상황을 보존하기 위해
+--        DB 제약으로 SCL의 다중 연결을 막지는 않는다.
+--        중복 진행 방지는 상태와 서비스 로직에서 검증한다.
+--        실행 기준 정본은 scl_sn이며, rfq_sn/sc_sn/p_sn은 조회 편의 캐시이다.
 -- ======================================================================
-CREATE TABLE rfqp_allocations (
-  rfqpa_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 배분 PK (실행 라인 기준)',
+CREATE TABLE rfq_allocations
+(
+    rfqa_sn        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'RFQ 라인 배분 PK',
 
-  rfqpl_sn  BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs) - 조회 편의 캐시',
-  rfqp_sn BIGINT UNSIGNED NOT NULL COMMENT 'RFQ 라인 PK(rfq_lines)',
-  sc_sn   BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases) - 조회 편의 캐시',
-  scl_sn  BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 라인 PK(sourcing_case_lines) - 실행 단위(정본)',
-  p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects) - 조회 편의 캐시',
+    rfq_sn         BIGINT UNSIGNED NOT NULL COMMENT 'RFQ PK(rfqs) - 조회 편의 캐시',
+    rfql_sn        BIGINT UNSIGNED NOT NULL COMMENT 'RFQ 라인 PK(rfq_lines)',
+    sc_sn          BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 PK(sourcing_cases) - 조회 편의 캐시',
+    scl_sn         BIGINT UNSIGNED NOT NULL COMMENT '수급 케이스 라인 PK(sourcing_case_lines) - 실행 단위(정본)',
+    p_sn           BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects) - 조회 편의 캐시',
 
-  rfqa_qty DECIMAL(14,3) NOT NULL COMMENT '실행 라인(scl) 기준 요청 수량(배분)',
-  rfqa_note VARCHAR(500) NULL COMMENT '비고(배분 사유 등)',
+    rfqa_qty       DECIMAL(14, 3)  NOT NULL COMMENT '실행 라인(scl) 기준 요청 수량(배분)',
+    rfqa_note      VARCHAR(500)    NULL COMMENT '비고(배분 사유 등)',
 
-  rfqa_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
-  rfqa_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+    rfqa_create_dt DATETIME        NOT NULL COMMENT '레코드 생성일시',
+    rfqa_update_dt DATETIME        NOT NULL COMMENT '레코드 수정일시',
 
-  PRIMARY KEY (rfqpa_sn),
+    PRIMARY KEY (rfqa_sn),
 
-  -- 같은 RFQ 라인에 같은 실행 라인을 중복 배분하는 실수 방지
-  UNIQUE KEY uk_rfqp_alloc (rfqpl_sn, scl_sn),
+    UNIQUE KEY uk_rfq_alloc_line_scl (rfql_sn, scl_sn),
 
-  KEY idx_rfqp_alloc_rfqp  (rfqp_sn),
-  KEY idx_rfqp_alloc_rfqpl (rfqpl_sn),
-  KEY idx_rfqp_alloc_sc    (sc_sn),
-  KEY idx_rfqp_alloc_scl   (scl_sn),
+    KEY idx_rfq_alloc_rfq  (rfq_sn),
+    KEY idx_rfq_alloc_rfql (rfql_sn),
+    KEY idx_rfq_alloc_sc   (sc_sn),
+    KEY idx_rfq_alloc_scl  (scl_sn),
+    KEY idx_rfq_alloc_project (p_sn),
 
-  CONSTRAINT fk_rfqp_alloc_rfqp  FOREIGN KEY (rfqp_sn)  REFERENCES rfq_plans(rfqp_sn),
-  CONSTRAINT fk_rfqp_alloc_rfql FOREIGN KEY (rfqpl_sn) REFERENCES rfqp_lines(rfqpl_sn),
-  CONSTRAINT fk_rfqp_alloc_sc   FOREIGN KEY (sc_sn)   REFERENCES sourcing_cases(sc_sn),
-  CONSTRAINT fk_rfqp_alloc_scl  FOREIGN KEY (scl_sn)  REFERENCES sourcing_case_lines(scl_sn)
-) COMMENT='RFQ 라인 ↔ 수급 실행 라인 배분(sc/rfq 캐시 포함, 실행 기준은 scl)' AUTO_INCREMENT=100;
+    CONSTRAINT fk_rfq_alloc_rfq
+        FOREIGN KEY (rfq_sn) REFERENCES rfqs (rfq_sn),
+    CONSTRAINT fk_rfq_alloc_rfql
+        FOREIGN KEY (rfql_sn) REFERENCES rfq_lines (rfql_sn),
+    CONSTRAINT fk_rfq_alloc_sc
+        FOREIGN KEY (sc_sn) REFERENCES sourcing_cases (sc_sn),
+    CONSTRAINT fk_rfq_alloc_scl
+        FOREIGN KEY (scl_sn) REFERENCES sourcing_case_lines (scl_sn),
+    CONSTRAINT fk_rfq_alloc_project
+        FOREIGN KEY (p_sn) REFERENCES projects (p_sn)
+) COMMENT='RFQ 라인 ↔ 수급 실행 라인 배분(sc/project/rfq 캐시 포함, 실행 기준은 scl)' AUTO_INCREMENT=100;
+
 
 
 -- ======================================================================
@@ -999,6 +919,10 @@ CREATE TABLE purchase_orders (
   po_nego_price INT NOT NULL DEFAULT 0 COMMENT '발주서 네고금액 +/- 가능',
   po_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '발주서 네고 사유',
   po_valid_until_dt DATETIME NOT NULL COMMENT '유효기간',
+
+  /* 편의를 위한 캐시 필드들 - po_lines, po_cost_lines 업뎃 시 동기화 필수 !!! */
+  po_total_price DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '발주 총합(세금 제외)',
+  po_total_tax DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '발주 세금 총합',
 
   po_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   po_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',

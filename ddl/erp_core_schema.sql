@@ -116,6 +116,7 @@ CREATE TABLE assignees (
   a_d_sn BIGINT UNSIGNED NULL COMMENT '부서 PK',
   a_name VARCHAR(32) NOT NULL COMMENT '담당자 이름',
   a_email VARCHAR(128) NULL COMMENT '이메일',
+  a_discord_id VARCHAR(45) NULL COMMENT '디스코드 아이디',
   a_is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '재직/활성 여부(1=활성, 0=비활성)',
   a_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   a_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
