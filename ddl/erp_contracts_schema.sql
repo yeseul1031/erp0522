@@ -127,7 +127,7 @@ CREATE TABLE projects (
   p_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '프로젝트(=계약 통합) PK',
   p_name VARCHAR(128) NOT NULL COMMENT '프로젝트명, 업체명+공고명+연도 등으로 조합해서 만들기',
   p_type ENUM('TENDER','DIRECT','FRAME')
-    NOT NULL COMMENT '프로젝트 유형(ENUM) | TENDER:입찰(공공/민간), DIRECT:직접계약(수의), FRAME:기간/다건 계약(프레임/콜오프, 여러 주문서 생성)',
+    NULL COMMENT '프로젝트 유형(ENUM) | TENDER:입찰(공공/민간), DIRECT:직접계약(수의), FRAME:기간/다건 계약(프레임/콜오프, 여러 주문서 생성), 초기 프로젝트 생성 시점에 계약 방식이 정해지지 않을 수 있으므로 NULL 허용, 단 OL을 입력하기전에는 반드시 채워야 한다.',
   p_customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객사 PK(parties)',
   p_contract_no VARCHAR(32) NULL COMMENT '계약서 번호(외부 식별자, 계약 전 NULL 가능)',
   p_signed_at DATE NULL COMMENT '계약 체결일(계약 전 NULL 가능)',
