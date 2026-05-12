@@ -131,7 +131,7 @@ CREATE TABLE projects (
   p_customer_pt_sn BIGINT UNSIGNED NULL COMMENT '고객사 PK(parties)',
   p_contract_no VARCHAR(32) NULL COMMENT '계약서 번호(외부 식별자, 계약 전 NULL 가능)',
   p_signed_at DATE NULL COMMENT '계약 체결일(계약 전 NULL 가능)',
-  p_contract_amount DECIMAL(18,2) NULL COMMENT '계약 총액(계약 전 NULL 가능)',
+  p_contract_amount DECIMAL(18,2) NULL COMMENT '계약 총액(계약 전 NULL 가능) 수기입력이 아닌 OL/OLO의 총 합으로 계산하여 입력되어야함. 화면상 입력 필드 없음, 프로젝트 상태가 완료일땐 변경되면 안됨',
   p_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화(예: KRW, USD)',
   p_status ENUM('PRE_CONTRACT','ACTIVE','CLOSED','CANCELLED')
     NOT NULL COMMENT '프로젝트 상태(ENUM) | PRE_CONTRACT:계약전/입찰검토, ACTIVE:진행, CLOSED:종료, CANCELLED:취소',
@@ -149,6 +149,17 @@ CREATE TABLE projects (
   p_default_sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE') NOT NULL DEFAULT 'DOMESTIC' COMMENT '기본 수급 방식, ol이 sourcing_case로 넘어갈때 기본으로 세팅되는 값',
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+
+  /* 납품 보고서용 필드들, 프로젝트 상태가 완료 전까지는 바뀔수 있고, UI상으로는 자동 계산된 값을 보여줘야함. 완료시 아래 값들이 확정되어 들어가고, 그 이후에는 납품 보고서에서는 자동 계산된 값이 아닌, 아래 값을 보여줘야함. 즉 완료 이후의 OL,PO, COST 등의 변경사항은 불일치 일어날 수 있음. */
+  p_report_ld_days INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 지체일수',
+  p_report_ld_target_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 대상 금액(부가세포함), 수기입력',
+-- p_report_ld_daily_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'p_report_ld_target_amount x 0.00075(법정 지체상금 비율)로 계산된 일당 지체상금액, 편의상 저장, 화면상 입력하지 않음',
+-- p_report_ld_total_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금 총액, p_report_ld_target_amount x (p_report_ld_days x 0.00075)로 계산, 편의상 저장, 화면상 입력하지 않음',
+  p_report_expenses_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.공통비용(자동계산) = 프로젝트 부디비용 + 발주서 특수비용, 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+  p_report_total_project_cost DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.구매금액, 프로젝트 총 원가, UI상 구매금액 (자동계산) = 프로젝트에 SCL에 할당된 발주서의 모든금액(특수비용, 네고 등 포함), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+  p_report_loss_cost DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.실패비용(손실액), 수기 입력',
+  p_report_net DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.마진금액 = 정산금액.계약금액(p_contract_amount) - 정산금액.구매금액(p_report_total_project_cost) - 정산금액.실패비용(p_report_loss_cost), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+
   PRIMARY KEY (p_sn),
   KEY idx_projects_customer_pt_sn (p_customer_pt_sn),
   KEY idx_projects_manager (p_a_sn),
@@ -890,7 +901,7 @@ CREATE TABLE purchase_orders (
     NOT NULL COMMENT '발주 상태(ENUM)',
 
   /* 업무 이벤트 */
-  po_issued_at DATETIME NOT NULL COMMENT '발주 발행일시(업무 이벤트)',
+  po_issued_at DATETIME NOT NULL COMMENT '발주 발행일시(업무 이벤트) = 발주일',
   po_accepted_at DATETIME NULL COMMENT '발주 수락일시(업무 이벤트)',
   po_expected_delivery_at DATE NULL COMMENT '예상 납기일(업무 이벤트)',
 
