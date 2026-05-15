@@ -141,24 +141,17 @@ CREATE TABLE projects (
   p_ended_at DATETIME NULL COMMENT '프로젝트 종료일시(업무 이벤트)',
   p_delivery_dt DATETIME NULL COMMENT '납기일시',
   p_delivery_dt_str VARCHAR(128) NOT NULL DEFAULT '' COMMENT '납기일시 문자열',
-  p_contractor VARCHAR(60) NOT NULL DEFAULT '' COMMENT '계약자',
-  p_site_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '현장명',
-  p_ba_nego_price INT NOT NULL DEFAULT 0 COMMENT '공고처 네고금액 +/- 가능',
+  p_contractor VARCHAR(60) NOT NULL DEFAULT '' COMMENT '계약업체명',
+  p_site_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '현장명(=납품처)',
+  p_contact_name VARCHAR(32) NOT NULL DEFAULT '' COMMENT '주문 담당자(상대방)',
+  p_contract_phone VARCHAR(16) NOT NULL DEFAULT '' COMMENT '주 담당자 연락처(상대방)',
+  p_ba_nego_price INT NOT NULL DEFAULT 0 COMMENT '공고처 네고금액 +/- 가능 (자동계산 필드, 프로젝트에 연결된 모든 발주서의 네고금액 합계를 반영해야함)',
   p_ba_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '네고 사유',
+  p_rounding_adjustment INT NOT NULL DEFAULT 0 COMMENT '절사금액, 자동계산 필드, 주문서의 절사금액 합계를 반영해야함',
   p_default_o_sn BIGINT UNSIGNED NULL COMMENT 'default 주문서 FK, 모든 프로젝트는 default 주문서를 1개 가진다. project 생성 시점에 order를 생성하고 이 값을 반영한다.',
-  p_default_sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE') NOT NULL DEFAULT 'DOMESTIC' COMMENT '기본 수급 방식, ol이 sourcing_case로 넘어갈때 기본으로 세팅되는 값',
+  p_note VARCHAR(500) NOT NULL DEFAULT '' COMMENT '비고',
   p_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   p_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
-
-  /* 납품 보고서용 필드들, 프로젝트 상태가 완료 전까지는 바뀔수 있고, UI상으로는 자동 계산된 값을 보여줘야함. 완료시 아래 값들이 확정되어 들어가고, 그 이후에는 납품 보고서에서는 자동 계산된 값이 아닌, 아래 값을 보여줘야함. 즉 완료 이후의 OL,PO, COST 등의 변경사항은 불일치 일어날 수 있음. */
-  p_report_ld_days INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 지체일수',
-  p_report_ld_target_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 대상 금액(부가세포함), 수기입력',
--- p_report_ld_daily_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'p_report_ld_target_amount x 0.00075(법정 지체상금 비율)로 계산된 일당 지체상금액, 편의상 저장, 화면상 입력하지 않음',
--- p_report_ld_total_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금 총액, p_report_ld_target_amount x (p_report_ld_days x 0.00075)로 계산, 편의상 저장, 화면상 입력하지 않음',
-  p_report_expenses_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.공통비용(자동계산) = 프로젝트 부디비용 + 발주서 특수비용, 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
-  p_report_total_project_cost DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.구매금액, 프로젝트 총 원가, UI상 구매금액 (자동계산) = 프로젝트에 SCL에 할당된 발주서의 모든금액(특수비용, 네고 등 포함), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
-  p_report_loss_cost DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.실패비용(손실액), 수기 입력',
-  p_report_net DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.마진금액 = 정산금액.계약금액(p_contract_amount) - 정산금액.구매금액(p_report_total_project_cost) - 정산금액.실패비용(p_report_loss_cost), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
 
   PRIMARY KEY (p_sn),
   KEY idx_projects_customer_pt_sn (p_customer_pt_sn),
@@ -210,11 +203,34 @@ create unique index announce_links_al_ba_sn_uindex
 CREATE TABLE orders (
   o_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '주문서 PK',
   o_p_sn BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects)',
-  o_name VARCHAR(32) NOT NULL COMMENT '주문서명',
+  o_name VARCHAR(32) NOT NULL COMMENT '주문서명(UI상 프로젝트명 컬럼명에 있는 값인데 개별 주문서가 필요할때는 이 필드를 보여줘야함), 초기=프로젝트명, 이후 수기 입력',
+  o_no VARCHAR(32) NOT NULL DEFAULT '' COMMENT '주문서 번호(외부 식별자) 수기입력',
+  o_contractor VARCHAR(60) NOT NULL DEFAULT '' COMMENT '계약업체명',
+  o_site_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '현장명(=납품처)',
+  o_contact_name VARCHAR(32) NOT NULL DEFAULT '' COMMENT '주문 담당자(상대방)',
+  o_contract_phone VARCHAR(16) NOT NULL DEFAULT '' COMMENT '주 담당자 연락처(상대방)',
+  o_ba_nego_price INT NOT NULL DEFAULT 0 COMMENT '공고처 네고금액 +/- 가능 (자동계산 필드, 프로젝트에 연결된 모든 발주서의 네고금액 합계를 반영해야함)',
+  o_ba_nego_reason VARCHAR(128) NOT NULL DEFAULT '' COMMENT '네고 사유',
+  o_rounding_adjustment INT NOT NULL DEFAULT 0 COMMENT '절사금액, 수기 입력, 변경시 해당 프로젝트의 전체 주문서의 절사 합계를 프로젝트에 반영해야함',
+  o_note VARCHAR(500) NOT NULL DEFAULT '' COMMENT '비고',
 
   o_a_sn BIGINT UNSIGNED NOT NULL COMMENT '생성자 PK(assignees)',
   o_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   o_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
+
+
+  /* 납품 보고서용 필드들, 프로젝트 상태가 완료 전까지는 바뀔수 있고, UI상으로는 자동 계산된 값을 보여줘야함. 완료시 아래 값들이 확정되어 들어가고, 그 이후에는 납품 보고서에서는 자동 계산된 값이 아닌, 아래 값을 보여줘야함. 즉 완료 이후의 OL,PO, COST 등의 변경사항은 불일치 일어날 수 있음. */
+  o_contract_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.계약금액(자동계산). 해당 주문서내 sum(ol.final_unit_price), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+  o_report_ld_days INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 지체일수',
+  o_report_ld_target_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 대상 금액(부가세포함), 수기입력',
+-- o_report_ld_daily_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'o_report_ld_target_amount x 0.00075(법정 지체상금 비율)로 계산된 일당 지체상금액, 편의상 저장, 화면상 입력하지 않음',
+-- o_report_ld_total_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금 총액, o_report_ld_target_amount x (o_report_ld_days x 0.00075)로 계산, 편의상 저장, 화면상 입력하지 않음',
+  o_report_expenses_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.공통비용(자동계산) = 프로젝트 부디비용 + 발주서 특수비용, 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+  o_report_total_project_cost DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.구매금액, 프로젝트 총 원가, UI상 구매금액 (자동계산) = 프로젝트에 SCL에 할당된 발주서의 모든금액(특수비용, 네고 등 포함), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+  o_report_loss_cost DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.실패비용(손실액), 수기 입력',
+  o_report_net DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.마진금액 = 정산금액.계약금액(o_contract_amount) - 정산금액.구매금액(o_report_total_project_cost) - 정산금액.실패비용(o_report_loss_cost), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+  o_status ENUM('OPEN','CLOSE') NOT NULL DEFAULT 'OPEN' COMMENT '주문서 마감 상태. 납품 보고서에서 대표님이 마감 버튼을 누르면 주문서 상태가 바뀌고 잠긴다. 그러면 여기엔 어떠한 OL도 넣고 빼고를 못한다. 그리고 개별 OL/OLO/SC/SCL들의 수정은 Workspace UI에서도 잠겨서 수정이 안되도록 해야하고, 서버에서도 O_STATUS==OPEN일때만 수정하도록 해야한다.',
+
 
   PRIMARY KEY (o_sn),
   UNIQUE KEY uk_order_p_sn_o_sn (o_p_sn, o_sn),
@@ -258,6 +274,10 @@ CREATE TABLE blanket_order_lines (
                                      final_item_unit  VARCHAR(20) NULL COMMENT '(검토된) 단위(예: EA, SET)',
                                      final_unit_price DECIMAL(18, 2) NULL COMMENT '(검토된) 판매 단가(고객에 납품 단가, 모르면 NULL)',
 
+                                     final_item_ctg varchar(16) DEFAULT NULL COMMENT '공고의 확인된 카테고리',
+                                     final_item_model_name varchar(32) DEFAULT NULL COMMENT '공고의 확인된 모델명',
+                                     final_item_manufacturer varchar(64) DEFAULT NULL COMMENT '공고의 확인된 제조사',
+
                                      bol_released_qty  DECIMAL(14, 3) NOT NULL COMMENT '현재까지 주문된 총 수량 필드, order(default order는제외)에 포함된 수량들의 집계로 업데이트 한다.',
 
                                      bol_status        ENUM('OPEN','IN_PROGRESS','DELIVERED','CANCELLED')
@@ -285,6 +305,10 @@ CREATE TABLE blanket_order_line_overrides (
                                               bolo_item_qty DECIMAL(14,3) NOT NULL COMMENT '(override) 요구 수량(납품 약속 수량)',
                                               bolo_item_unit VARCHAR(20) NULL COMMENT '(override) 단위(예: EA, SET)',
     -- olo_unit_price 는 없다. 왜냐하면 주문라인의 단가 1개만 실 단가이고 남어지는 참조일뿐이다.
+                                              bolo_item_ctg varchar(16) DEFAULT NULL COMMENT '공고의 확인된 카테고리',
+                                              bolo_item_model_name varchar(32) DEFAULT NULL COMMENT '공고의 확인된 모델명',
+                                              bolo_item_manufacturer varchar(64) DEFAULT NULL COMMENT '공고의 확인된 제조사',
+
 
                                               bolo_released_qty  DECIMAL(14, 3) NOT NULL COMMENT '현재까지 주문된 총 수량 필드, receivables에 포함된 수량들의 집계로 업데이트 한다.',
 
@@ -314,6 +338,9 @@ CREATE TABLE blanket_order_line_overrides (
  * - 본 테이블은 3벌 데이터를 한 레코드에 고정 저장한다(출처가 유동적이지 않음).
  * - 문서/웹 원문 파일 자체는 documents + document_order_line_links로 연결한다. (1:N이므로, 여러 문서/웹 출처가 있을 수 있다.)
  * - 계약에서는 요구사항에 촛점을 맞추고, g_sn 과 매핑은 실제 수급 영역에서 다룬다.
+ * - OL_STATUS=CANCELLED는 SC/SCL이 협업으로 삭제가 어려울때 삭제 대신 CANCELLED를 둠, 다른 상태는 두지 않는다.
+ *   워크스페이스 UI에서 초기엔 OL에 입출고등의 상태를 보여주려해서 비정규화를 해서 넣으려 했으나 지금은 입출고 등의 날짜를 그냥 뿌려주기로 해서 이제 필요 없다.
+ *   OLO도 마찬가지다.
  * ====================================================================== */
 
 CREATE TABLE order_lines (
@@ -344,12 +371,15 @@ CREATE TABLE order_lines (
   final_item_unit VARCHAR(20) NULL COMMENT '(검토된) 단위(예: EA, SET)',
   final_unit_price DECIMAL(18,2) NULL COMMENT '(검토된) 판매 단가(고객에 납품 단가, 모르면 NULL)',
 
+  final_ctg varchar(16) DEFAULT NULL COMMENT '공고의 확인된 카테고리',
+  final_model_name varchar(32) DEFAULT NULL COMMENT '공고의 확인된 모델명',
+  final_manufacturer varchar(64) DEFAULT NULL COMMENT '공고의 확인된 제조사',
+
   ol_req_dept varchar(32) default '' not null comment '요청 부서',
   ol_order_dt date null comment '수의/연간 계약등에서 개별 주문항목의 주문/수주일이 있을경우',
   ol_delivery_place varchar(32) null comment '개별 납품장소가 있을경우',
 
-  ol_status ENUM('OPEN','IN_PROGRESS','DELIVERED','CANCELLED')
-    NOT NULL COMMENT '라인 상태(ENUM) | OPEN:오픈, IN_PROGRESS:진행, DELIVERED:납품완료, CANCELLED:취소',
+  ol_status ENUM('OPEN', 'CANCELLED') NOT NULL COMMENT '라인 상태(ENUM) | OPEN:오픈, CANCELLED:취소',
   ol_due_date DATE NULL COMMENT '납품 예정일(업무 이벤트)',
   ol_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ol_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -384,6 +414,11 @@ CREATE TABLE order_line_overrides (
   olo_item_unit VARCHAR(20) NULL COMMENT '(override) 단위(예: EA, SET)',
   -- olo_unit_price 는 없다. 왜냐하면 주문라인의 단가 1개만 실 단가이고 남어지는 참조일뿐이다.
 
+  olo_item_ctg varchar(16) DEFAULT NULL COMMENT '공고의 확인된 카테고리',
+  olo_item_model_name varchar(32) DEFAULT NULL COMMENT '공고의 확인된 모델명',
+  olo_item_manufacturer varchar(64) DEFAULT NULL COMMENT '공고의 확인된 제조사',
+
+  olo_status ENUM('OPEN', 'CANCELLED') NOT NULL DEFAULT 'OPEN' COMMENT '상태, OPEN, CANCELLED 자세한건 OL 설명 참조'
 
   olo_note VARCHAR(500) NULL COMMENT '사유/메모',
   olo_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -595,6 +630,9 @@ CREATE TABLE sourcing_case_lines (
 
   -- 메모/근거
   scl_note varchar(500) NULL COMMENT '스펙/조건/주의사항. 예: "고객 요구 16GB, 본체 8GB이므로 추가 RAM 필요"',
+
+  -- 주거래처 메모 텍스트
+  scl_vendor_str VARCHAR(128) NOT NULL DEFAULT '' COMMENT '주거래처 메모 텍스트',
 
   -- 메타
   scl_create_dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '레코드 생성일시',

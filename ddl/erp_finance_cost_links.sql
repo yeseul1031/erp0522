@@ -108,6 +108,39 @@ CREATE TABLE po_cost_line_allocations
 ) COMMENT ='PO 복합 비용 라인 배분. po_cost_lines 항목별로 PO 라인/PO 배분/수급 단위에 금액 기준 배분한다.' AUTO_INCREMENT=100;
 
 
+-- ======================================================================
+-- TABLE: po_nego_allocations
+-- DESC : PO 헤더 네고 금액 배분. purchase_orders.po_nego_price를 Project에 배분한다.
+-- NOTE : po_nego_price는 발주서 헤더 단위 조정 금액이므로, PO가 여러 프로젝트를 커버할 때 프로젝트별 원가 해석을 위해 별도 배분한다.
+--        애플리케이션은 SUM(pona_price) = purchase_orders.po_nego_price를 검증해야 한다.
+-- ======================================================================
+CREATE TABLE po_nego_allocations
+(
+    pona_sn        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PO 네고 금액 배분 PK',
+
+    pona_po_sn     BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders.po_sn)',
+    pona_p_sn      BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects.p_sn) | 프로젝트 기준 조회를 위한 비정규화 고정값',
+
+    pona_price     INT             NOT NULL COMMENT '이 프로젝트에 배분된 발주서 네고 금액(+/- 가능). 배분 합계는 purchase_orders.po_nego_price와 일치해야 한다',
+    pona_note      VARCHAR(500)    NULL COMMENT '배분 근거/사유',
+
+    pona_create_dt DATETIME        NOT NULL COMMENT '레코드 생성일시',
+    pona_update_dt DATETIME        NOT NULL COMMENT '레코드 수정일시',
+
+    PRIMARY KEY (pona_sn),
+
+    UNIQUE KEY uq_pona_po_p (pona_po_sn, pona_p_sn),
+    KEY idx_pona_po (pona_po_sn),
+    KEY idx_pona_p (pona_p_sn),
+
+    CONSTRAINT fk_pona_po
+        FOREIGN KEY (pona_po_sn) REFERENCES purchase_orders (po_sn),
+
+    CONSTRAINT fk_pona_p
+        FOREIGN KEY (pona_p_sn) REFERENCES projects (p_sn)
+) COMMENT='PO 헤더 네고 금액을 프로젝트에 배분한다.' AUTO_INCREMENT=100;
+
+
 -- ===============================================
 -- 발주서가 아닌 기타 다른 녀석들. 단순 비용들이라 할수 있다.
 -- ===============================================
@@ -118,6 +151,7 @@ CREATE TABLE project_cost_allocations
 
     pca_ct_sn     BIGINT UNSIGNED NOT NULL COMMENT '비용 PK(costs.ct_sn)',
     pca_p_sn      BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects.p_sn)',
+    pca_o_sn      BIGINT UNSIGNED NOT NULL COMMENT '주문서 PK(orders.o_sn)',
 
     pca_price     DECIMAL(18, 2)  NOT NULL COMMENT '이 프로젝트에 배분된 비용 금액(세금 제외)',
     pca_tax       DECIMAL(18, 2)  NOT NULL DEFAULT 0 COMMENT '이 프로젝트에 배분된 세금 금액',
@@ -127,12 +161,14 @@ CREATE TABLE project_cost_allocations
     pca_update_dt DATETIME        NOT NULL COMMENT '레코드 수정일시',
 
     PRIMARY KEY (pca_sn),
-    UNIQUE KEY uq_pca_ct_p (pca_ct_sn, pca_p_sn),
+    UNIQUE KEY uq_pca_ct_p (pca_ct_sn, pca_p_sn, pca_o_sn),
     KEY idx_pca_ct (pca_ct_sn),
     KEY idx_pca_p (pca_p_sn),
 
     CONSTRAINT fk_pca_ct
         FOREIGN KEY (pca_ct_sn) REFERENCES costs (ct_sn),
     CONSTRAINT fk_pca_p
-        FOREIGN KEY (pca_p_sn) REFERENCES projects (p_sn)
+        FOREIGN KEY (pca_p_sn) REFERENCES projects (p_sn),
+    CONSTRAINT fk_pca_o
+        FOREIGN KEY (pca_o_sn) REFERENCES orders (o_sn)
 ) COMMENT ='비용 배분: costs.ct_type=PROJECT일 때 프로젝트에 금액/세금을 배분한다.' AUTO_INCREMENT=100;
