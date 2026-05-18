@@ -306,7 +306,7 @@ CREATE TABLE costs (
   ct_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
   ct_note VARCHAR(500) NULL COMMENT '비용 설명',
   ct_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
-  ct_status ENUM('CREATE', 'CANCEL', 'REFUND') NOT NULL DEFAULT 'CREATE' COMMENT '비용 상태(ENUM) | CREATE:생성, CANCEL:취소(payable까지 생성 안되고 그냥 삭제시 조용히 쓱싹), REFUND:환불/차감',
+  ct_status ENUM('CREATE', 'CANCEL', 'REFUND') NOT NULL DEFAULT 'CREATE' COMMENT '비용 상태(ENUM) | CREATE:생성, CANCEL:취소(payable까지 생성 안되고 그냥 삭제시 조용히 쓱싹, payable이 있다면 reject시켜버리기), REFUND:환불/차감',
   ct_parent_ct_sn BIGINT UNSIGNED NULL COMMENT '취소, 부분환불 등으로 생성시 부모 비용 PK',
   ct_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ct_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -606,9 +606,9 @@ CREATE TABLE payables (
   pbl_account_number VARCHAR(80) NULL COMMENT '정산 당시 계좌번호 스냅샷. 통장 조회/거래처 매칭과 과거 payables 표시의 기준으로 사용한다.',
   pbl_account_holder_name VARCHAR(120) NULL COMMENT '정산 당시 예금주/계좌명 스냅샷. bank_accounts 변경/거래처 통합 이후에도 payables 당시 정보를 보존한다.',
 
-  pbl_status ENUM('CREATED','APPROVED','ON_HOLD','PROCESSED','CANCELLED', 'REJECTED')
+  pbl_status ENUM('CREATED','APPROVED','ON_HOLD','PROCESSED','REJECTED')
     NOT NULL DEFAULT 'CREATED'
-    COMMENT 'AP 정산 처리 요청 상태(ENUM) | CREATED:작성/요청됨, APPROVED:승인 및 즉시 처리 대상, ON_HOLD:승인되었으나 정기/일괄 처리 대상으로 보류, PROCESSED:처리 완료, CANCELLED:취소, REJECTED:반려',
+    COMMENT 'AP 정산 처리 요청 상태(ENUM) | CREATED:작성/요청됨, APPROVED:승인 및 즉시 처리 대상, ON_HOLD:승인되었으나 정기/일괄 처리 대상으로 보류, PROCESSED:처리 완료, REJECTED:반려',
 
   pbl_requested_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees) | 구매/운영/재무 등',
   pbl_approved_by_a_sn BIGINT UNSIGNED NULL COMMENT '승인자 PK(assignees) | 승인 시 설정',

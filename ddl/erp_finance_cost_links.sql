@@ -80,7 +80,8 @@ CREATE TABLE po_cost_line_allocations
     pcla_sn        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PO Cost Line 배분 PK',
 
     pcla_pocl_sn   BIGINT UNSIGNED NOT NULL COMMENT '발주 특수 비용 라인 PK(po_cost_lines.pocl_sn)',
-    pcla_p_sn      BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects.p_sn) | 프로젝트 기준 조회를 위한 비정규화 고정값',
+    pcla_p_sn      BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects.p_sn) | 프로젝트 기준 조회 매핑값',
+    pcla_o_sn      BIGINT UNSIGNED NOT NULL COMMENT '주문서 PK(orders.o_sn) | 주문서 기준 조회 매핑값',
 
     pcla_po_sn     BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders.po_sn) | po_cost_lines.pocl_po_sn의 조회 편의 캐시',
 
@@ -94,7 +95,7 @@ CREATE TABLE po_cost_line_allocations
     PRIMARY KEY (pcla_sn),
 
     KEY idx_pcla_pocl (pcla_pocl_sn),
-    KEY idx_pcla_p (pcla_p_sn),
+    KEY idx_pcla_p (pcla_p_sn, pcla_o_sn),
     KEY idx_pcla_po (pcla_po_sn),
 
     CONSTRAINT fk_pcla_pocl
@@ -102,6 +103,9 @@ CREATE TABLE po_cost_line_allocations
 
     CONSTRAINT fk_pcla_p
         FOREIGN KEY (pcla_p_sn) REFERENCES projects (p_sn),
+
+    CONSTRAINT fk_pcla_o
+        FOREIGN KEY (pcla_o_sn) REFERENCES orders (o_sn),
 
     CONSTRAINT fk_pcla_po
         FOREIGN KEY (pcla_po_sn) REFERENCES purchase_orders (po_sn)
@@ -120,6 +124,7 @@ CREATE TABLE po_nego_allocations
 
     pona_po_sn     BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders.po_sn)',
     pona_p_sn      BIGINT UNSIGNED NOT NULL COMMENT '프로젝트 PK(projects.p_sn) | 프로젝트 기준 조회를 위한 비정규화 고정값',
+    pona_o_sn      BIGINT UNSIGNED NOT NULL COMMENT '주문서 PK(orders.o_sn) | 주문서 기준 조회를 위한 비정규화 고정값',
 
     pona_price     INT             NOT NULL COMMENT '이 프로젝트에 배분된 발주서 네고 금액(+/- 가능). 배분 합계는 purchase_orders.po_nego_price와 일치해야 한다',
     pona_note      VARCHAR(500)    NULL COMMENT '배분 근거/사유',
@@ -131,7 +136,7 @@ CREATE TABLE po_nego_allocations
 
     UNIQUE KEY uq_pona_po_p (pona_po_sn, pona_p_sn),
     KEY idx_pona_po (pona_po_sn),
-    KEY idx_pona_p (pona_p_sn),
+    KEY idx_pona_p (pona_p_sn, pona_o_sn),
 
     CONSTRAINT fk_pona_po
         FOREIGN KEY (pona_po_sn) REFERENCES purchase_orders (po_sn),

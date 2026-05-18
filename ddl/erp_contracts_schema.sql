@@ -198,6 +198,27 @@ create unique index announce_links_al_ba_sn_uindex
 -- TABLE: orders
 -- DESC : 주문서
 -- NOTE : 계약내 주문항목을 그룹핑 하기 위한 목적으로 존재하는 엔티티이다. 실제 납품 단위는 order_lines(+order_line_overrides)이다.
+-- 납품 보고서를 위한 화면 구성 및 서비스 정책:
+-- 1. 상단, 프로젝트와 주문서 정보는 이미 프론트에서 들고 있다는 가정하에 진행. 주문서 마감 상태 또한 알고 있다는 조건하에 진행
+-- 2. 연간/수의 프로젝트에서 원본/기본 주문서를 선택했을때는 메인 납품보고서 항목과 우측 상세 배분율이 나오면 안됨. 요약 정보만 나와야 함.
+-- 요약정보 항목들
+-- - 매출합계: sum(ol.final_unit_price), o.o_contract_amount
+-- - 매출네고금액: o.o_ba_nego_price
+-- - 절사금액: o_rounding_adjustment
+-- - 계약금액: 자동계산, (매출합계-매출네고+/-절사금액)
+-- - 구매금액: 주문서의 품목 금액만, o_report_purchase_amount
+-- - 납품경비: 부대비용 + 특수비용, o_report_expenses_amount
+-- - 네고비용: 발주서의 네고 비용, o_report_purchase_nego_amount
+-- - 실패금액: o_report_loss_cost
+-- - 지체상금액: 자동계산, (지체상금 계산용 지체일수(o_report_ld_days) * 지체상금 계산용 대상금액(o_report_ld_target_amount))
+-- - 마진금액: 자동계산, (계약-구매-경비+네고-실패-지체), o_report_net
+-- - 마진율: 자동계산, (마진금액/계약금액)
+-- 3. (여러 프로젝트에 배분되는) 정산 비용이 초기 자동으로 배분되는 주문서의 위치는 다음과 같다:
+--   p_type=일반 -> 기본 주문서
+--   p_type=연간 -> 최근 생성된 주문서
+--   p_type=수의 -> 기본 주문서, 납품보고서에서 기본주문서를 선택시 다른 주문서로 이동 할수 있는 UI 필요
+--   즉, p_type=연간일때만 위치가 달라짐
+-- 4. 수의계약의 발주서 관련 비용은 하나의 프로젝트당 단 한개의 주문서에 배분되어야함. 비율은 각각 달라도 됨. 여러 주문서에 섞여 배분되면, 데이터적인 문제가 아니라, 납품 보고서 화면 구성이 복잡하게 됨.
 -- ======================================================================
 
 CREATE TABLE orders (
@@ -220,11 +241,9 @@ CREATE TABLE orders (
 
 
   /* 납품 보고서용 필드들, 프로젝트 상태가 완료 전까지는 바뀔수 있고, UI상으로는 자동 계산된 값을 보여줘야함. 완료시 아래 값들이 확정되어 들어가고, 그 이후에는 납품 보고서에서는 자동 계산된 값이 아닌, 아래 값을 보여줘야함. 즉 완료 이후의 OL,PO, COST 등의 변경사항은 불일치 일어날 수 있음. */
-  o_contract_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.계약금액(자동계산). 해당 주문서내 sum(ol.final_unit_price), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
+  o_contract_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.매출합계(자동계산). 해당 주문서내 sum(ol.final_unit_price), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
   o_report_ld_days INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 지체일수',
   o_report_ld_target_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금(Liquidated Damages) 계산용 대상 금액(부가세포함), 수기입력',
--- o_report_ld_daily_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'o_report_ld_target_amount x 0.00075(법정 지체상금 비율)로 계산된 일당 지체상금액, 편의상 저장, 화면상 입력하지 않음',
--- o_report_ld_total_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '지체상금 총액, o_report_ld_target_amount x (o_report_ld_days x 0.00075)로 계산, 편의상 저장, 화면상 입력하지 않음',
   o_report_expenses_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.납품경비(자동계산) = 프로젝트 부대비용 + 발주서 특수비용, 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
   o_report_purchase_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.구매금액, 프로젝트 총 원가, UI상 구매금액 (자동계산) = 프로젝트에 SCL에 할당된 발주서의 품목금액 합계만 (특수비용, 네고 등은 제외), 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
   o_report_purchase_nego_amount DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '정산금액.네고비용, 프로젝트에 할당된 발주서 네고 비용들 합계, 프로젝트 상태가 완료전까진 자동 계산된 비용을 보여주고, 프로젝트 완료시 확정(필드에 기록)하기',
@@ -281,8 +300,7 @@ CREATE TABLE blanket_order_lines (
 
                                      bol_released_qty  DECIMAL(14, 3) NOT NULL COMMENT '현재까지 주문된 총 수량 필드, order(default order는제외)에 포함된 수량들의 집계로 업데이트 한다.',
 
-                                     bol_status        ENUM('OPEN','IN_PROGRESS','DELIVERED','CANCELLED')
-    NOT NULL COMMENT '라인 상태(ENUM) | OPEN:오픈, IN_PROGRESS:진행, DELIVERED:납품완료, CANCELLED:취소',
+                                     bol_status        ENUM('OPEN', 'CANCELLED') NOT NULL COMMENT '라인 상태(ENUM) | OPEN:오픈, CANCELLED:취소',
                                      bol_due_date      DATE NULL COMMENT '납품 예정일(업무 이벤트)',
                                      bol_create_dt     DATETIME       NOT NULL COMMENT '레코드 생성일시',
                                      bol_update_dt     DATETIME       NOT NULL COMMENT '레코드 수정일시',
@@ -313,6 +331,7 @@ CREATE TABLE blanket_order_line_overrides (
 
                                               bolo_released_qty  DECIMAL(14, 3) NOT NULL COMMENT '현재까지 주문된 총 수량 필드, receivables에 포함된 수량들의 집계로 업데이트 한다.',
 
+                                              bolo_status        ENUM('OPEN', 'CANCELLED') NOT NULL COMMENT '라인 상태(ENUM) | OPEN:오픈, CANCELLED:취소',
                                               bolo_note VARCHAR(500) NULL COMMENT '사유/메모',
                                               bolo_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
                                               bolo_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -419,7 +438,7 @@ CREATE TABLE order_line_overrides (
   olo_item_model_name varchar(32) DEFAULT NULL COMMENT '공고의 확인된 모델명',
   olo_item_manufacturer varchar(64) DEFAULT NULL COMMENT '공고의 확인된 제조사',
 
-  olo_status ENUM('OPEN', 'CANCELLED') NOT NULL DEFAULT 'OPEN' COMMENT '상태, OPEN, CANCELLED 자세한건 OL 설명 참조'
+  olo_status ENUM('OPEN', 'CANCELLED') NOT NULL DEFAULT 'OPEN' COMMENT '상태, OPEN, CANCELLED 자세한건 OL 설명 참조',
 
   olo_note VARCHAR(500) NULL COMMENT '사유/메모',
   olo_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
@@ -450,6 +469,7 @@ CREATE TABLE order_line_overrides (
  * - ASSIGNING        : 특정 담당자에게 위임 요청(수락/거절 대기)
  * - ASSIGNEE_WORKING : 요청 받은 담당자가 수락하여 처리 중
  * - CANCELLED        : 취소
+ * - 완료상태는 별도로 두지 않음. 진행 현황 및 완료 상태는 각 단계별 날짜를 담당자가 활용하도록 함
  *
  * FIELD USAGE
  * - sc_owner_a_sn      : 이 수급 케이스를 생성하고 소유한 구매 담당자이다. 협업 요청/수락만으로 변경되지 않는다.
@@ -480,14 +500,13 @@ CREATE TABLE sourcing_cases (
   sc_type ENUM('DOMESTIC','OVERSEAS','IN_HOUSE')
     NOT NULL COMMENT '수급 방식(ENUM) | DOMESTIC:국내구매, OVERSEAS:해외구매, IN_HOUSE:자체제작',
   sc_assignee_a_sn BIGINT UNSIGNED NULL COMMENT '현재 수급 수행 담당자 PK(assignees) | 직접 처리 시 owner와 같고, 협업 수락 시 협업 담당자를 의미',
-  sc_status ENUM('OPEN', 'SELF_ASSIGNED', 'ASSIGNING', 'ASSIGNEE_WORKING', 'CANCELLED', 'DONE') NOT NULL COMMENT
+  sc_status ENUM('OPEN', 'SELF_ASSIGNED', 'ASSIGNING', 'ASSIGNEE_WORKING', 'CANCELLED') NOT NULL COMMENT
     '수급 케이스의 현재 처리 상태를 나타내는 코드이다.
     - OPEN               : 담당자 미확정 상태이다. 누구도 인수하지 않았으며, 담당자 지정 대기열에 해당한다.
     - SELF_ASSIGNED      : 케이스 생성자/프로젝트 담당자가 본인이 직접 처리하기로 인수한 상태이다.
     - ASSIGNING          : 특정 담당자에게 처리를 요청한 상태이다. 요청 대상의 수락/거절을 기다린다.
     - ASSIGNEE_WORKING   : 요청 받은 담당자가 수락하여 실제로 처리 중인 상태이다.
-    - CANCELLED          : 케이스가 취소된 상태이다.
-    - DONE               : 케이스 처리 완료 상태이다.',
+    - CANCELLED          : 케이스가 취소된 상태이다.',
   sc_owner_a_sn BIGINT UNSIGNED NOT NULL COMMENT
     '수급 케이스를 생성하고 소유한 구매 담당자 PK(assignees). 협업 요청/수락만으로 변경되지 않으며, 담당 변경/퇴사 등 소유권 이관 시 갱신된다.',
 
@@ -596,24 +615,7 @@ CREATE TABLE sourcing_case_lines (
 
 
   -- 상태/진행
-  scl_status ENUM(
-    'DRAFT',
-    'CONFIRMED',
-    'QUOTING',
-    'ORDERING',
-    'IN_PROGRESS',
-    'RECEIVED',
-    'CANCELLED',
-    'CLOSED'
-  ) NOT NULL DEFAULT 'DRAFT' COMMENT 'scl_status (라인 상태)
-- DRAFT       : 초안(수급 검토 중, 아직 RFQ/PO로 요청하지 않음)
-- CONFIRMED   : 확정(이 라인을 조달 대상으로 확정, RFQ/PO 대상으로 삼을 수 있음)
-- QUOTING     : 견적 진행 중(RFQ 발송/응답 수집 중)
-- ORDERING    : 발주 진행 중(PO 작성/발송/수락 대기 포함)
-- IN_PROGRESS : 진행 중(제작/가공/준비 등)
-- RECEIVED    : 입고/수령 완료(조달 완료)
-- CANCELLED   : 취소(조달 대상에서 제외)
-- CLOSED      : 종료(완료/정산 완료 등 운영상 클로즈)',
+  scl_status ENUM('OPEN', 'CANCELLED') NOT NULL DEFAULT 'OPEN' COMMENT 'scl_status (라인 상태) | OPEN:오픈, CANCELLED:취소, 이외 진행현황은 상태로 두지 않고 각종 날짜를 담당자가 활용하여 파악하도록 함',
 
   -- 조달 대상 식별: goods 또는 자유 텍스트(비정형)
   scl_g_sn BIGINT UNSIGNED NULL COMMENT '조달 대상 goods FK (goods.g_sn). 명확한 품목이면 사용',
@@ -789,7 +791,7 @@ CREATE TABLE rfqs (
   rfq_a_sn BIGINT UNSIGNED NOT NULL COMMENT '작성자 PK(assignees)',
 
   /* 상태 */
-  rfq_status ENUM('DRAFT','SENT','REPLIED','DECLINED','CANCELLED','CLOSED') NOT NULL COMMENT 'RFQ 상태(ENUM) | DRAFT:발송전, SENT:발송됨, REPLIED:회신받음, DECLINED:거절당함, CANCELLED:취소됨, CLOSED:종료(완료/폐기 등)',
+  rfq_status ENUM('DRAFT','SENT','REPLIED','DECLINED','CANCELLED','CLOSED') NOT NULL COMMENT 'RFQ 상태(ENUM) | DRAFT:발송전, SENT:발송됨, REPLIED:회신받음, DECLINED:거절당함, CANCELLED:취소됨, CLOSED:종료(완료/폐기 등). 현재 기획상 DRAFT는 안쓰지만 일단 예비로 넣어둠. 현재는 생성시 바로 SENT로 생성하기',
 
   /* 업무 이벤트 */
   rfq_issued_at DATETIME NULL COMMENT 'RFQ 발행/발송일시(업무 이벤트)',
@@ -936,7 +938,7 @@ CREATE TABLE purchase_orders (
   po_source_rfq_sn BIGINT UNSIGNED NULL COMMENT '근거 RFQ PK(rfqs) | RFQ 기반 생성 시 연결',
 
   /* 발주 구분/상태 */
-  po_status ENUM('DRAFT','SENT','ACCEPTED','REJECTED','CANCELLED','CLOSED')
+  po_status ENUM('DRAFT','SENT','ACCEPTED','REJECTED','CANCELLED')
     NOT NULL COMMENT '발주 상태(ENUM)',
 
   /* 업무 이벤트 */
@@ -1070,7 +1072,7 @@ CREATE TABLE po_cost_lines (
   pocl_sn    BIGINT UNSIGNED AUTO_INCREMENT NOT NULL COMMENT '발주 특수 비용 라인 PK',
   pocl_po_sn BIGINT UNSIGNED NOT NULL COMMENT '발주서 PK(purchase_orders)',
   pocl_name  VARCHAR(128) NOT NULL COMMENT '비용 항목명(운송료, 포장비, 보험료 등)',
-  pocl_qty   DECIMAL(14,3) DEFAULT 0 NULL COMMENT '수량',
+-- 특수비용은 수량은 없다, 화면에 엑셀 컬럼 호환을 위해서 그냥 1 보여주기.
   pocl_cost  DECIMAL(18,2) NULL COMMENT '단가',
   pocl_tax   DECIMAL(18,2) NULL COMMENT '세금',
   pocl_tax_type ENUM('INCLUDED', 'EXCLUDED', 'EXEMPT', 'ZERO_RATED') COMMENT '세금 처리 종류| INCLUDED:포함, EXCLUDED:불포함, EXEMPT:면세, ZERO_RATED:영세',
