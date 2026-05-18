@@ -364,7 +364,7 @@ CREATE TABLE inventory_operation_lines
 -- TABLE: delivery_requests
 -- DESC : 배송 협의/요청(스케줄 조율/역제안 기록)
 -- NOTE : delivery_requests는 물류 요청 컨테이너다(내부 요청/외주 요청 등). status는 md 정책의 추천값을 따른다.
--- NOTE : 권장 status: SUBMITTED/COUNTERED/ACCEPTED/REJECTED/CONFIRMED/CANCELED.
+-- NOTE : 권장 status: SUBMITTED/COUNTERED/ACCEPTED/REJECTED/CONFIRMED/CANCELLED.
 -- ======================================================================
 CREATE TABLE delivery_requests (
   dr_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '배송 협의/요청 PK | 협의가 필요한 케이스에서 사용',
@@ -373,9 +373,9 @@ CREATE TABLE delivery_requests (
   dr_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees)',
   dr_pt_sn BIGINT UNSIGNED NULL COMMENT '협의 상대(물류/업체) PK(parties) | 내부 수행이면 NULL 가능',
 
-  dr_status ENUM('SUBMITTED','COUNTERED','ACCEPTED','REJECTED','CONFIRMED','CANCELED')
+  dr_status ENUM('SUBMITTED','COUNTERED','ACCEPTED','REJECTED','CONFIRMED','CANCELLED')
     NOT NULL DEFAULT 'SUBMITTED'
-    COMMENT '요청 상태(ENUM) | SUBMITTED:제출, COUNTERED:역제안, ACCEPTED:수락, REJECTED:거절, CONFIRMED:확정, CANCELED:취소',
+    COMMENT '요청 상태(ENUM) | SUBMITTED:제출, COUNTERED:역제안, ACCEPTED:수락, REJECTED:거절, CONFIRMED:확정, CANCELLED:취소',
 
   dr_requested_window_start DATETIME NULL COMMENT '요청 시간창 시작(선택)',
   dr_requested_window_end DATETIME NULL COMMENT '요청 시간창 종료(선택)',
