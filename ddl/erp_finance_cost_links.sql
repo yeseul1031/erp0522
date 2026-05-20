@@ -94,6 +94,8 @@ CREATE TABLE po_cost_line_allocations
 
     PRIMARY KEY (pcla_sn),
 
+    UNIQUE KEY uq_pcla_pcla_pocl_sn_pcla_p_sn (pcla_pocl_sn, pcla_p_sn), -- 하나의 발주서 비용은 한 프로젝트에는 1개만 배분되야한다. 한프로젝트내 여러 주문서에 나뉘어서 들어가는걸 막는 정책
+
     KEY idx_pcla_pocl (pcla_pocl_sn),
     KEY idx_pcla_p (pcla_p_sn, pcla_o_sn),
     KEY idx_pcla_po (pcla_po_sn),
@@ -166,7 +168,7 @@ CREATE TABLE project_cost_allocations
     pca_update_dt DATETIME        NOT NULL COMMENT '레코드 수정일시',
 
     PRIMARY KEY (pca_sn),
-    UNIQUE KEY uq_pca_ct_p (pca_ct_sn, pca_p_sn, pca_o_sn),
+    UNIQUE KEY idx_pca_ct_p (pca_p_sn, pca_o_sn, pca_ct_sn),
     KEY idx_pca_ct (pca_ct_sn),
     KEY idx_pca_p (pca_p_sn),
 

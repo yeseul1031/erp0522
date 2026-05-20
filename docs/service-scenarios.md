@@ -211,7 +211,7 @@
 
 - 열려 있는 `order_lines.ol_status`가 없는지 확인
 - 열려 있는 `sourcing_cases.sc_status`가 없는지 확인
-- `purchase_orders.po_status`가 `CLOSED` 또는 `CANCELLED`인지 확인
+- 진행 중인 `purchase_orders.po_status`가 없는지 확인한다. 현재 DDL에는 PO `CLOSED` 상태가 없으므로, 취소된 PO는 `CANCELLED`로 닫고 정상 완료된 PO는 관련 SCL/입출고/정산 완료 여부로 검증한다.
 - 관련 cost/payable/payment가 미완료 상태로 남아 있지 않은지 확인
 
 프로젝트 종료는 하위 엔티티를 자동 종료한다는 뜻이 아니다. 종료 버튼은 검증 후 프로젝트 상태를 닫는 업무 이벤트다.
@@ -499,11 +499,11 @@ owner가 다른 담당자에게 수급 수행을 요청하는 경우다.
 
 `QUOTING`
 
-- `rfqp_allocations` 또는 RFQ가 생성되어 견적 진행 중이다.
+- `rfqs`, `rfq_lines`, `rfq_allocations`가 생성되어 견적 진행 중이다.
 
 `ORDERING`
 
-- PO 작성/발송/수락 대기 중이다.
+- PO 작성/승인 요청/승인 완료 대기 중이다.
 
 `IN_PROGRESS`
 
@@ -524,86 +524,36 @@ owner가 다른 담당자에게 수급 수행을 요청하는 경우다.
 
 ---
 
-## 4. 견적: RFQ Plan/RFQ
+## 4. 견적: RFQ
 
-### 4.1 견적기안 생성
+현재 DDL 기준으로 견적기안(`rfq_plans`) 계층은 없다. 견적 요청은 업체별 `rfqs`를 바로 만들고, 요청/응답 라인은 `rfq_lines`에 둔다.
 
-견적은 먼저 내부 견적기안을 만든다.
+### 4.1 업체별 RFQ 생성
 
-`rfq_plans`
-
-- `rfqp_name`: 견적기안명. 생성 후 변경하지 않는다.
-- `rfqp_nick`: 내부 바구니명
-- `rfqp_choice_pt_sn`: 최초 `NULL`
-- `rfqp_rfq_sn`: 최초 `NULL`
-- `rfqp_status`: `DRAFT`
-- `rfqp_visible`: `Y`
-- `rfqp_a_sn`: 작성자
-- `rfqp_tax_type`
-- `rfqp_req_note`: 업체 전달용 요청사항
-- `rfqp_create_dt`, `rfqp_update_dt`
-
-### 4.2 견적기안 라인 생성
-
-`rfqp_lines`
-
-- `rfqpl_rfqp_sn`
-- `rfqpl_no`
-- `rfqpl_g_sn`: 견적 대상 goods. 현재 RFQ는 goods가 확정된 물품 SCL만 대상으로 한다.
-- `rfqpl_manufacturer_name`, `rfqpl_name`, `rfqpl_model_no`, `rfqpl_spec`, `rfqpl_coo`
-- `rfqpl_req_name`, `rfqpl_req_model`, `rfqpl_req_manufacturer_name`, `rfqpl_req_spec_name`
-- `rfqpl_req_qty`, `rfqpl_req_unit`
-- `rfqpl_req_note`
-- `rfqpl_note`
-- `rfqpl_create_dt`, `rfqpl_update_dt`
-
-SCL과의 귀속은 `rfqp_allocations`에 기록한다.
-
-`rfqp_allocations`
-
-- `rfqpl_sn`: 견적기안 라인
-- `rfqp_sn`: 견적기안
-- `sc_sn`: 조회 편의 캐시
-- `scl_sn`: 실행 라인 정본
-- `p_sn`: 프로젝트 조회 캐시
-- `rfqa_qty`: 이 견적기안 라인이 커버하는 SCL 수량
-- `rfqa_note`
-- `rfqa_create_dt`, `rfqa_update_dt`
-
-한 RFQPL이 여러 SCL을 커버하면 allocation을 여러 건 만든다. 여러 RFQPL이 하나의 SCL을 나누어 견적할 수도 있다.
-
-`rfqp_lines`는 견적 요청 내용의 기준이다. RFQ 생성 이후에도 RFQ 라인은 `rfql_rfqpl_sn`으로 이 기안 라인을 참조하며, 업체 화면의 요청 품목/규격/수량 정보도 `rfqp_lines`의 현재 값을 기준으로 보여준다.
-
-견적서는 계약서가 아니다. RFQ는 가격과 공급 가능성을 확인하기 위한 업무 문서이고, 실제 계약적 정본은 발주서(`purchase_orders`, `po_lines`)다. 따라서 견적 요청 내용과 업체 응답 사이의 약간의 불일치는 운영상 감수하며, 최종 수량/단가/세금/통화/납기 등 구매 확정값은 PO에서 결정한다.
-
-### 4.3 견적 대상 업체 지정
-
-`rfqp_vendors`
-
-- `rfqpv_rfqp_sn`
-- `rfqpv_pt_sn`
-- `rfqpv_rfq_sn`: 아직 RFQ 생성 전이면 `NULL`
-- `rfqpv_create_dt`, `rfqpv_update_dt`
-
-### 4.4 업체별 RFQ 전개
-
-견적기안 UI에서 `생성` 버튼을 누르면, 그 시점의 `rfq_plans`, `rfqp_lines`, `rfqp_vendors`를 기준으로 업체별 `rfqs`와 `rfq_lines`를 만든다. 이 동작은 견적기안을 실제 업체별 견적 요청으로 publish/deploy하는 이벤트다.
+같은 품목을 여러 업체에 비교 견적하려면 업체별로 `rfqs`를 각각 만든다. 현재 DDL 주석 기준으로 `DRAFT`는 예비 상태이고, 서비스 기획상 생성 시 바로 `SENT`로 만들 수 있다.
 
 `rfqs`
 
-- `rfp_rfqp_sn`: 견적기안
-- `rfq_pt_sn`: 업체
+- `rfq_name`: RFQ명/견적서명
+- `rfq_pt_sn`: 견적 요청 대상 업체
 - `rfq_a_sn`: 작성자
-- `rfq_status`: `DRAFT` 또는 발송 즉시 `SENT`
-- `rfq_issued_at`: 발송 시각
+- `rfq_status`: 보통 `SENT`, 초안 보존이 필요하면 `DRAFT`
+- `rfq_issued_at`: 발행/발송일시. `DRAFT`면 `NULL` 가능
+- `rfq_req_pub_note`: 업체 전달용 요청 메모
 - `rfq_res_pub_note`: 최초 `NULL`
-- `rfq_note`
+- `rfq_note`: 내부 메모
 - `rfq_create_dt`, `rfq_update_dt`
+
+### 4.2 RFQ 라인 생성
 
 `rfq_lines`
 
 - `rfql_rfq_sn`
-- `rfql_rfqpl_sn`: 원본 견적기안 라인
+- `rfql_no`
+- `rfql_g_sn`: 견적 대상 goods. 현재 RFQ는 goods가 확정된 물품 SCL만 대상으로 한다.
+- `rfql_manufacturer_name`, `rfql_name`, `rfql_model_no`, `rfql_spec`, `rfql_coo`
+- `rfql_req_name`, `rfql_req_model`, `rfql_req_manufacturer_name`, `rfql_req_spec_name`
+- `rfql_req_qty`, `rfql_req_unit`, `rfql_req_note`
 - `rfql_supply_type`: 회신 전이면 `NULL`
 - `rfql_res_qty`: 회신 전 `0`
 - `rfql_res_unit`: 회신 전 `''`
@@ -612,36 +562,45 @@ SCL과의 귀속은 `rfqp_allocations`에 기록한다.
 - `rfql_res_note`: 회신 전 `NULL`
 - `rfql_create_dt`, `rfql_update_dt`
 
-`rfq_lines`는 요청 품목 스냅샷을 복사해 보존하는 테이블이 아니다. 업체가 웹사이트에서 입력할 수 있는 값은 `rfql_supply_type`, `rfql_res_qty`, `rfql_res_unit`, `rfql_res_unit_price`, `rfql_res_tax_price`, `rfql_res_note` 같은 응답 필드뿐이다.
+`rfq_lines`는 견적 요청 시점의 상품/요청 정보와 업체 응답 정보를 함께 보유한다. 견적은 계약 정본이 아니며, 최종 수량/단가/세금/통화/납기는 PO 라인에서 확정한다. 과거 특정 시점에 업체가 본 요청서를 재현해야 하면 RFQ 발송 문서/PDF를 `documents`로 저장하고 `document_links`로 `RFQS`에 연결한다.
 
-`rfqp_vendors` update
+### 4.3 RFQ 라인 배분
 
-- `rfqpv_rfq_sn`: 생성된 RFQ
-- `rfqpv_update_dt`
+SCL과의 귀속은 `rfq_allocations`에 기록한다.
 
-### 4.5 RFQ 생성 이후 RFQ Plan 변경 규칙
+`rfq_allocations`
 
-RFQ 생성 후에는 업체별 RFQ와 RFQ line이 이미 존재하지만, `rfq_lines`는 응답 슬롯이고 요청 정보는 `rfqp_lines`를 참조한다. 따라서 `rfqp_lines` 수정은 업체 화면에 즉시 반영된다.
+- `rfq_sn`: RFQ 조회 편의 캐시
+- `rfql_sn`: RFQ 라인
+- `sc_sn`: 수급 케이스 조회 편의 캐시
+- `scl_sn`: 실행 라인 정본
+- `p_sn`: 프로젝트 조회 캐시
+- `rfqa_qty`: 이 RFQ 라인이 커버하는 SCL 기준 요청 수량
+- `rfqa_note`
+- `rfqa_create_dt`, `rfqa_update_dt`
+
+한 RFQ 라인이 여러 SCL을 커버하면 allocation을 여러 건 만든다. 여러 RFQ 라인이 하나의 SCL에 대해 비교견적, 재견적, 취소 후 재시도처럼 여러 번 연결될 수도 있다. 중복 진행 방지는 DB 제약이 아니라 상태와 서비스 로직에서 검증한다.
+
+### 4.4 RFQ 생성 이후 변경 규칙
 
 허용
 
-- `rfqp_lines` 신규 추가: 이미 생성된 각 RFQ에 대응 `rfq_lines`를 추가 생성한다.
-- `rfqp_vendors` 신규 추가: 새 업체용 `rfqs`와 전체 `rfq_lines`를 생성한다.
-- `rfqp_lines` 요청 품목/규격/수량/단위 수정: 기존 `rfq_lines`는 그대로 두고, 업체 화면은 수정된 `rfqp_lines` 값을 보여준다.
+- 업체 회신 전 `rfq_lines` 요청 품목/규격/수량/단위 수정
+- 업체 회신 전 `rfq_lines` 추가
+- 발송 취소나 재견적이 필요한 경우 기존 RFQ를 보존하고 새 RFQ를 생성
 
 주의
 
-- 업체가 이미 응답한 뒤 요청 품목/규격/수량을 바꾸면, 그 응답이 어떤 요청 조건에 대한 응답이었는지 약간의 불일치가 생길 수 있다.
-- 현재 정책은 이 불일치를 감수한다. 견적은 계약 정본이 아니며, 최종 계약/구매 값은 PO에서 확정한다.
-- 그래도 발송 후 주요 요청값 변경은 추적성을 위해 `activity_logs`/`audit_changes`에 남긴다.
-- 특정 시점에 업체가 본 요청서를 재현해야 하는 경우, RFQ 발송 문서/PDF를 `documents`로 저장하고 `document_links`로 `RFQS`에 연결한다.
+- 업체가 이미 응답한 뒤 요청 품목/규격/수량을 바꾸면, 그 응답이 어떤 요청 조건에 대한 응답이었는지 불명확해질 수 있다.
+- 주요 요청값 변경은 추적성을 위해 `activity_logs`/`audit_changes`에 남긴다.
+- 견적은 계약 정본이 아니므로 최종 구매 값은 `purchase_orders`와 `po_lines`에서 확정한다.
 
 금지
 
-- RFQ 생성 이후 `rfqp_lines` 삭제
 - 업체가 회신한 `rfq_lines`를 잃게 만드는 수정
+- 견적 이력을 삭제하고 최신 값만 남기는 방식의 정리
 
-### 4.6 RFQ 상태 전이
+### 4.5 RFQ 상태 전이
 
 `DRAFT`
 
@@ -674,18 +633,16 @@ RFQ 생성 후에는 업체별 RFQ와 RFQ line이 이미 존재하지만, `rfq_l
 
 - 비교/선정이 끝났거나 폐기되어 더 이상 사용하지 않는다.
 
-### 4.7 업체 선택
+### 4.6 업체 선택
 
-선택한 업체와 RFQ가 정해지면 `rfq_plans`를 갱신한다.
+선택한 업체와 RFQ가 정해지면 선택된 RFQ를 기반으로 PO를 만든다.
 
-`rfq_plans` update
+`purchase_orders`
 
-- `rfqp_choice_pt_sn`: 선택 업체
-- `rfqp_rfq_sn`: 선택 RFQ
-- `rfqp_status`: `DONE`
-- `rfqp_update_dt`
+- `po_source_rfq_sn`: 선택된 RFQ
+- `po_vendor_pt_sn`: 선택 업체
 
-선택된 RFQ를 기반으로 PO를 만들 수 있다. 선택되지 않은 RFQ는 `CLOSED`로 닫는다.
+선택되지 않은 RFQ는 비교/선정이 끝났으면 `CLOSED`로 닫는다. 별도의 `rfq_plans.rfqp_status='DONE'` 같은 선택 상태는 현재 DDL 기준으로 사용하지 않는다.
 
 ---
 
@@ -771,7 +728,6 @@ RFQ 생성 후에는 업체별 RFQ와 RFQ line이 이미 존재하지만, `rfq_l
 
 - `pocl_po_sn`
 - `pocl_name`
-- `pocl_qty`
 - `pocl_cost`
 - `pocl_tax`
 - `pocl_tax_type`
@@ -784,36 +740,31 @@ PO 특수 비용 라인이 있으면 cost 생성 시 `po_cost_line_allocations`�
 
 `DRAFT`
 
-- 내부 작성 중.
+- 구매 담당자 또는 수급 담당자가 내부 작성 중.
 - 라인/금액/allocation 수정 가능.
 - cost/payable/payment는 아직 만들지 않는 것이 기본이다.
 
 `SENT`
 
-- 업체에게 발송.
-- `po_issued_at` 확정.
+- 작성자가 승인권자에게 발주 승인을 요청한 상태다.
+- 승인 전 검토 대상이며 cost/payable/payment는 아직 만들지 않는 것이 기본이다.
 - 관련 SCL은 `ORDERING`으로 전환 가능.
 
 `ACCEPTED`
 
-- 업체가 수락.
+- 승인권자가 발주를 승인한 상태다.
 - `po_accepted_at` 입력.
-- 이후 비용 원장 생성 가능.
+- 이 시점에 PO 비용 원장을 생성한다.
 
 `REJECTED`
 
-- 업체가 거절.
+- 승인권자가 발주를 반려한 상태다.
 - 기존 PO는 닫고, 필요하면 새 PO를 만든다.
 
 `CANCELLED`
 
 - 발주 취소.
 - cost/payable/payment 생성 여부에 따라 재무 처리 방식이 달라진다.
-
-`CLOSED`
-
-- 발주 실행과 정산이 운영상 종료.
-- 관련 SCL은 `RECEIVED` 또는 `CLOSED`로 닫을 수 있다.
 
 ### 5.5 PO 입고/출고 편의 필드
 
@@ -851,7 +802,7 @@ AR 납품 정산(`receivables -> receipts`)과 전사 통합 입출금 원장은
 
 ### 6.1 PO 비용 생성
 
-PO가 수락되었거나 비용 인식 시점이 되면 PO 비용을 만든다.
+PO가 승인되어 `purchase_orders.po_status='ACCEPTED'`가 되면 PO 비용을 만든다.
 
 `costs`
 
@@ -929,7 +880,6 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 - `pay_method`: `CARD`
 - `pay_status`: `PROCESSED`
 - `pay_pt_sn`: 지급 상대
-- `pay_bk_sn`: 보통 `NULL`
 - `pay_ct_sn`: cost PK
 - `pay_pbl_sn`: `NULL`
 - `pay_paid_at`: 지급 완료일시
@@ -968,12 +918,12 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 - `pbl_ct_sn`: 근거 cost
 - `pbl_request_type`: `PAYMENT`
 - `pbl_payee_pt_sn`: 지급 대상
-- `pbl_payee_bk_sn`: 지급 예정 계좌
+- `pbl_bank_name`, `pbl_account_number`, `pbl_account_holder_name`: 지급 예정 계좌 스냅샷
 - `pbl_status`: `CREATED`
 - `pbl_requested_by_a_sn`: 요청자
-- `pbl_approved_by_a_sn`: 최초 `NULL`
+- `pbl_responded_by_a_sn`: 최초 `NULL`
 - `pbl_requested_at`
-- `pbl_approved_at`: 최초 `NULL`
+- `pbl_responded_at`: 최초 `NULL`
 - `pbl_due_at`
 - `pbl_ccy`
 - `pbl_total_amount`
@@ -985,8 +935,8 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 승인
 
 - `pbl_status`: `APPROVED`
-- `pbl_approved_by_a_sn`: 승인자
-- `pbl_approved_at`: 승인일시
+- `pbl_responded_by_a_sn`: 승인자
+- `pbl_responded_at`: 승인일시
 - `pbl_update_dt`
 
 정기결제/일괄결제 보류
@@ -1029,7 +979,7 @@ PO와 직접 연결되지 않는 배송비, 검수비, 현장 작업비, 일반 
 - `pay_method`: `TRANSFER`
 - `pay_status`: `PROCESSED`
 - `pay_pt_sn`: 지급 상대
-- `pay_bk_sn`: 실제 지급 계좌
+- `pay_bank_name`, `pay_account_number`, `pay_account_holder_name`: 실제 지급 계좌 스냅샷
 - `pay_ct_sn`: cost PK
 - `pay_pbl_sn`: payable PK
 - `pay_paid_at`
@@ -1112,7 +1062,7 @@ payable 1건은 payment 1건으로만 집행한다. 정산 처리 총액의 정�
 - `pbl_ct_sn`: refund cost
 - `pbl_request_type`: `REFUND`
 - `pbl_payee_pt_sn`: 환불/차감 확인 대상
-- `pbl_payee_bk_sn`: 필요 시 환불 출처/확인 참고 계좌
+- `pbl_bank_name`, `pbl_account_number`, `pbl_account_holder_name`: 필요 시 환불 출처/확인 참고 계좌 스냅샷
 - `pbl_status`: 최초 `CREATED`, 승인 후 `APPROVED` 또는 `ON_HOLD`
 - `pbl_total_amount`: 환불 확인 대상 금액. 양수로 저장한다.
 
@@ -1124,7 +1074,7 @@ payable 1건은 payment 1건으로만 집행한다. 정산 처리 총액의 정�
 - `pay_method`: 원 지급과 같은 수단을 기본으로 한다. 카드 취소는 `CARD`, 계좌 환불은 `TRANSFER`.
 - `pay_status`: `PROCESSED`
 - `pay_pt_sn`: 환불/차감 상대
-- `pay_bk_sn`: 필요 시 확인 계좌
+- `pay_bank_name`, `pay_account_number`, `pay_account_holder_name`: 필요 시 확인 계좌 스냅샷
 - `pay_ct_sn`: refund cost
 - `pay_pbl_sn`: refund payable
 - `pay_paid_at`: 환불 확인일시
@@ -1444,7 +1394,7 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 
 ### 7.1 DRAFT PO 수정
 
-아직 발송 전이다.
+아직 승인 요청 전이다.
 
 수정 가능
 
@@ -1459,7 +1409,7 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 
 ### 7.2 SENT/ACCEPTED PO 수정
 
-업체에 발송했거나 수락된 PO다.
+승인 요청 중이거나 승인 완료된 PO다.
 
 경미한 내부 메모 수정
 
@@ -1573,11 +1523,11 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 4. `order_lines`: `final_item_name='드라이버'`, `final_item_qty=10`, `ol_status='OPEN'`
 5. `sourcing_cases`: `sc_type='DOMESTIC'`, `sc_status='SELF_ASSIGNED'`
 6. `sourcing_case_lines`: `scl_line_type='FINISHED_GOOD'`, `scl_purpose_code='FULFILL_ORDER_LINE'`, `scl_status='CONFIRMED'`
-7. `rfq_plans`, `rfqp_lines`, `rfqp_allocations`, `rfqp_vendors`
-8. 업체별 `rfqs`, `rfq_lines`
-9. 선택 후 `rfq_plans.rfqp_status='DONE'`
-10. `purchase_orders`: `po_status='ACCEPTED'`
-11. `po_lines`, `po_allocations`
+7. 업체별 `rfqs`, `rfq_lines`, `rfq_allocations`
+8. 선택된 RFQ를 근거로 `purchase_orders`: `po_source_rfq_sn=선택 RFQ`, 최초 `po_status='DRAFT'`
+9. `po_lines`, `po_allocations`
+10. 승인 요청 후 `purchase_orders`: `po_status='SENT'`
+11. 승인 완료 후 `purchase_orders`: `po_status='ACCEPTED'`
 12. `costs`: `ct_type='PO'`, `ct_kind='PO_COST'`
 13. `po_cost_links`
 14. `payments`: `pay_method='CARD'`, `pay_ct_sn=cost`, `pay_pbl_sn=NULL`
@@ -1589,15 +1539,17 @@ PO cost에서 특정 라인, 특정 프로젝트, 특정 특수 비용만 환불
 2. `orders`, `order_lines`
 3. `sourcing_cases`: `SELF_ASSIGNED` 또는 `ASSIGNEE_WORKING`
 4. `sourcing_case_lines`: `CONFIRMED`
-5. `purchase_orders`: `po_source_rfq_sn=NULL`, `po_status='ACCEPTED'`
+5. `purchase_orders`: `po_source_rfq_sn=NULL`, 최초 `po_status='DRAFT'`
 6. `po_lines`: `source_rfql_sn=NULL`, `source_note='기존 단가표 기준'`
 7. `po_allocations`
-8. `costs`: `ct_type='PO'`, `ct_kind='PO_COST'`
-9. `po_cost_links`
-10. `payables`: `pbl_request_type='PAYMENT'`, `pbl_status='CREATED'`
-11. 승인 후 `payables`: `APPROVED`
-12. `payments`: `pay_tx_type='PAYMENT'`, `pay_method='TRANSFER'`, `pay_status='PROCESSED'`, `pay_pbl_sn=payable`
-13. `payables`: `PROCESSED`로 갱신
+8. 승인 요청 후 `purchase_orders`: `po_status='SENT'`
+9. 승인 완료 후 `purchase_orders`: `po_status='ACCEPTED'`
+10. `costs`: `ct_type='PO'`, `ct_kind='PO_COST'`
+11. `po_cost_links`
+12. `payables`: `pbl_request_type='PAYMENT'`, `pbl_status='CREATED'`
+13. 승인 후 `payables`: `APPROVED`
+14. `payments`: `pay_tx_type='PAYMENT'`, `pay_method='TRANSFER'`, `pay_status='PROCESSED'`, `pay_pbl_sn=payable`
+15. `payables`: `PROCESSED`로 갱신
 
 ### 8.3 FRAME 계약 총량에서 개별 주문 릴리즈
 
@@ -1762,9 +1714,8 @@ PO 문서
 
 | 엔티티 | 주요 상태 | 처리 원칙 |
 |---|---|---|
-| `rfq_plans` | `DRAFT`, `DONE` | DONE이면 업체 RFQ 생성/선택 완료 |
 | `rfqs` | `DRAFT`, `SENT`, `REPLIED`, `DECLINED`, `CANCELLED`, `CLOSED` | 업체별 요청/회신 컨테이너 |
-| `purchase_orders` | `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `CANCELLED`, `CLOSED` | 실제 구매 문서 |
+| `purchase_orders` | `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `CANCELLED` | 실제 구매 문서. `SENT`는 승인 요청, `ACCEPTED`는 승인 완료 |
 | `costs` | `CREATE`, `CANCEL`, `REFUND` | 비용 원장. 삭제보다 취소/환불 기록 |
 | `payables` | `CREATED`, `APPROVED`, `ON_HOLD`, `PROCESSED`, `CANCELLED`, `REJECTED` | AP 정산 처리 요청. PAYMENT/REFUND는 `pbl_request_type`으로 구분 |
 | `payments` | `PROCESSED`, `CANCELLED` | AP 정산 처리 결과. PAYMENT/REFUND는 `pay_tx_type`으로 구분 |

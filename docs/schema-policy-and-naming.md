@@ -139,11 +139,11 @@ DB 설명 문서는 아래 파일을 기준으로 유지한다. 상세 테이블
 
 ## 5. 금액 / 수량 / 단가 / 통화 / 세금 규칙
 
-- 금액: `{t}_amt`
-- 세금: `{t}_tax_amt`
-- 합계: `{t}_total_amt`
+- 금액: `{t}_amount`
+- 세금: `{t}_tax_amount`
+- 합계: `{t}_total_amount`
 - 수량: `{t}_qty`
-- 단가: `{t}_unit_price` 또는 `{t}_unit_amt` 중 하나로 표준화(선택 필요)
+- 단가: `{t}_unit_price` 또는 `{t}_unit_amount` 중 하나로 표준화(선택 필요)
 - 통화: `{t}_ccy` (예: KRW, USD)
 - 환율: `{t}_fx_rate`
 
@@ -244,7 +244,7 @@ DB 설명 문서는 아래 파일을 기준으로 유지한다. 상세 테이블
 
 | RFQ(견적요청) | `rfqs` | `rfq` | `rfq_sn` |
 | RFQ 라인 | `rfq_lines` | `rfql` | `rfql_sn` |
-| RFQ 기안-수급 배정 | `rfqp_allocations` | `rfqpa` | `rfqpa_sn` |
+| RFQ 라인-수급 배정 | `rfq_allocations` | `rfqa` | `rfqa_sn` |
 
 | 발주서(PO) | `purchase_orders` | `po` | `po_sn` |
 | 발주 라인 | `po_lines` | `pol` | `pol_sn` |

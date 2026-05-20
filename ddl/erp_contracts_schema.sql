@@ -406,7 +406,7 @@ CREATE TABLE order_lines (
   PRIMARY KEY (ol_sn),
   UNIQUE KEY uk_order_lines_order_line_no (ol_o_sn, ol_no),
   KEY idx_order_lines_p_sn (ol_p_sn),
-  KEY idx_order_lines_o_sn (ol_o_sn),
+  KEY idx_order_lines_o_sn (ol_o_sn, ol_status), -- 납품보고서에서 상태와 함께 조회 하는데 사용
   KEY idx_order_lines_bol_sn (ol_bol_sn),
   KEY idx_order_lines_status (ol_status),
   CONSTRAINT fk_order_lines_projects
@@ -481,7 +481,7 @@ CREATE TABLE order_line_overrides (
  * - 상세 액션 이력은 audit/activity_logs로 남긴다(별도 이벤트 테이블 신설 없음).
  *
  * EXECUTION & QUANTITY INTERPRETATION
- * - sc_required_qty는 '목표/참조 수량'이며, 실행/진행 수량은 rfqp_allocations / po_allocations 합계로 관찰한다.
+ * - sc_required_qty는 '목표/참조 수량'이며, 실행/진행 수량은 rfqs_allocations / po_allocations 합계로 관찰한다.
  * - 실행 합계는 목표와 일치하지 않을 수 있으며, 이는 정상 케이스다:
  *   - 유실/파손 대비 여분 구매
  *   - 샘플 구매(납품 제외)
@@ -645,7 +645,7 @@ CREATE TABLE sourcing_case_lines (
 
   -- Indexes
   KEY idx_scl_sc_sn (scl_sc_sn),
-  KEY idx_scl_ol_sn (scl_ol_sn),
+  KEY idx_scl_ol_sn (scl_ol_sn, scl_status), -- 납품 보고서에서 상태와 함께 조회
   KEY idx_scl_olo_sn (scl_olo_sn),
   KEY idx_scl_status (scl_status),
   KEY idx_scl_g_sn (scl_g_sn),

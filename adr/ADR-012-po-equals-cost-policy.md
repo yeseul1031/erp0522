@@ -16,4 +16,4 @@ PO가 여러 정산 주체를 섞으면 정산/세금계산서/증빙 관리가 
 ## Consequences
 - 정산 단위가 단순해지고 운영 오류가 줄어든다.
 - 멀티셀러 케이스에서 문서 허브 기반 증빙 연결이 자연스러워진다.
-- 실제 귀속/안분은 `cost_allocations`로 처리한다.
+- 실제 비용 해석은 `costs.ct_type`에 따라 `po_cost_links`, `po_allocations`, `po_cost_line_allocations`, `project_cost_allocations`를 사용한다.

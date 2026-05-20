@@ -9,10 +9,10 @@ Accepted
 
 ## Decision
 RFQ와 PO는 단일 테이블 체계로 통일한다.
-- RFQ: `rfqs` / `rfq_lines` / `rfq_allocations`
+- RFQ: `rfq_plans` / `rfqp_lines` / `rfqs` / `rfq_lines` / `rfqp_allocations`
 - PO: `purchase_orders` / `po_lines` / `po_allocations`
 
-해외 비용은 적용 환율과 환산 결과를 고정 저장한다.
+해외 비용은 적용한 환율 스냅샷과 선택 사유를 고정 저장한다.
 - 권장: `cost_fx_applications`(+ 필요 시 `fx_rates` 참조)
 
 ## Consequences

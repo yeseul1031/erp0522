@@ -54,6 +54,12 @@
 - 이유: 국내/해외 차이는 옵션 필드 차이(통화/인도조건/국가/환율)에 가깝고, 분리는 운영/개발/리포팅 복잡도를 증가시킨다.
 - 결정: 해외 비용은 감사/재현을 위해 적용 환율과 환산 결과를 고정 저장한다(예: `cost_fx_applications`).
 
+## ADR-PROC-0002 RFQ Plan 계층 제거 및 RFQ 직접 사용
+
+- 결정: 현재 DDL 기준 견적 흐름은 `rfq_plans`, `rfqp_lines`, `rfqp_vendors`, `rfqp_allocations`를 사용하지 않고 `rfqs`, `rfq_lines`, `rfq_allocations`를 직접 사용한다.
+- 결정: 여러 업체 비교견적은 업체별 `rfqs`를 각각 생성하고, 선택 결과는 `purchase_orders.po_source_rfq_sn`으로 표현한다.
+- 이유: 견적기안 계층을 별도로 두지 않아도 RFQ 라인과 SCL 귀속은 `rfq_allocations`로 표현할 수 있고, PO 생성 시점의 근거 RFQ를 명확히 남길 수 있다.
+
 ## ADR-NAME-0001 메타 시간 컬럼 규칙
 
 - 결정: 엔티티 메타(생성/수정) 시간은 `{abbr}_create_dt/{abbr}_update_dt`로 고정한다.

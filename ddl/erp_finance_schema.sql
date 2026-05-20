@@ -308,6 +308,7 @@ CREATE TABLE costs (
   ct_a_sn BIGINT UNSIGNED NOT NULL COMMENT '등록자 PK(assignees)',
   ct_status ENUM('CREATE', 'CANCEL', 'REFUND') NOT NULL DEFAULT 'CREATE' COMMENT '비용 상태(ENUM) | CREATE:생성, CANCEL:취소(payable까지 생성 안되고 그냥 삭제시 조용히 쓱싹, payable이 있다면 reject시켜버리기), REFUND:환불/차감',
   ct_parent_ct_sn BIGINT UNSIGNED NULL COMMENT '취소, 부분환불 등으로 생성시 부모 비용 PK',
+  ct_unpaid_amount DECIMAL(18,2) NOT NULL COMMENT '미지급금. payment 생성시마다 갱신한다. CREATE cost는 (ct_price+ct_tax) - sum(PAYMENT pay_amount), REFUND cost는 음수 cost 총액을 양수 REFUND payment가 상쇄하므로 (ct_price+ct_tax) + sum(REFUND pay_amount)로 해석한다.',
   ct_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   ct_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
   PRIMARY KEY (ct_sn),
@@ -606,21 +607,23 @@ CREATE TABLE payables (
   pbl_account_number VARCHAR(80) NULL COMMENT '정산 당시 계좌번호 스냅샷. 통장 조회/거래처 매칭과 과거 payables 표시의 기준으로 사용한다.',
   pbl_account_holder_name VARCHAR(120) NULL COMMENT '정산 당시 예금주/계좌명 스냅샷. bank_accounts 변경/거래처 통합 이후에도 payables 당시 정보를 보존한다.',
 
-  pbl_status ENUM('CREATED','APPROVED','ON_HOLD','PROCESSED','REJECTED')
+  pbl_status ENUM('CREATED','APPROVED','ON_HOLD','PROCESSED','REJECTED', 'CANCELLED')
     NOT NULL DEFAULT 'CREATED'
-    COMMENT 'AP 정산 처리 요청 상태(ENUM) | CREATED:작성/요청됨, APPROVED:승인 및 즉시 처리 대상, ON_HOLD:승인되었으나 정기/일괄 처리 대상으로 보류, PROCESSED:처리 완료, REJECTED:반려',
+    COMMENT 'AP 정산 처리 요청 상태(ENUM) | CREATED:작성/요청됨, APPROVED:승인 및 즉시 처리 대상, ON_HOLD:승인되었으나 정기/일괄 처리 대상으로 보류, PROCESSED:처리 완료, REJECTED:반려, CANCELLED:취소(CREATE상태시에만 담당자가 취소 가능)',
 
   pbl_requested_by_a_sn BIGINT UNSIGNED NOT NULL COMMENT '요청자 PK(assignees) | 구매/운영/재무 등',
-  pbl_approved_by_a_sn BIGINT UNSIGNED NULL COMMENT '승인자 PK(assignees) | 승인 시 설정',
+  pbl_responded_by_a_sn BIGINT UNSIGNED NULL COMMENT '처리자(승인/반려) PK(assignees) | 승인/반려 시 설정',
 
   pbl_requested_at DATETIME NOT NULL COMMENT 'AP 정산 처리 요청일시(업무 이벤트)',
-  pbl_approved_at DATETIME NULL COMMENT '승인일시(업무 이벤트)',
+  pbl_responded_at DATETIME NULL COMMENT '승인/반려 일시(업무 이벤트)',
   pbl_due_at DATE NULL COMMENT '처리 예정일/기한(업무 이벤트). PAYMENT는 지급 예정일, REFUND는 환불 확인 목표일',
 
   pbl_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '정산 통화',
   pbl_total_amount DECIMAL(18,2) NOT NULL COMMENT '정산 처리 요청 금액. 항상 양수로 저장하고, 지급/환불 방향은 pbl_request_type으로 해석한다.',
 
-  pbl_note VARCHAR(500) NULL COMMENT '재무 메모(처리 사유/특이사항)',
+  pbl_note VARCHAR(500) NULL COMMENT '재무 메모 (자유 메모)',
+  pbl_req_note VARCHAR(500) NULL COMMENT '재무 메모 (요청자용)',
+  pbl_res_note VARCHAR(500) NULL COMMENT '재무 메모(승인자용)',
 
   pbl_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
   pbl_update_dt DATETIME NOT NULL COMMENT '레코드 수정일시',
@@ -638,8 +641,8 @@ CREATE TABLE payables (
     FOREIGN KEY (pbl_payee_pt_sn) REFERENCES parties(pt_sn),
   CONSTRAINT fk_payables_requested_by
     FOREIGN KEY (pbl_requested_by_a_sn) REFERENCES assignees(a_sn),
-  CONSTRAINT fk_payables_approved_by
-    FOREIGN KEY (pbl_approved_by_a_sn) REFERENCES assignees(a_sn)
+  CONSTRAINT fk_payables_responded_by
+    FOREIGN KEY (pbl_responded_by_a_sn) REFERENCES assignees(a_sn)
 ) COMMENT='AP 정산 처리 요청 단위. 지급 요청(PAYMENT)과 환불 확인 요청(REFUND)을 모두 표현한다.' AUTO_INCREMENT=100;
 
 /* =======================================================================
@@ -655,6 +658,64 @@ CREATE TABLE payables (
 ALTER TABLE payments
   ADD CONSTRAINT fk_payments_payable
     FOREIGN KEY (pay_pbl_sn) REFERENCES payables(pbl_sn);
+
+
+-- ======================================================================
+-- TABLE: finance_history_events
+-- DESC : 재무 처리 이력 이벤트(화면 표시용 스냅샷)
+-- NOTE : finance_history_events는 통합비용관리 상세 패널의 처리 이력 타임라인을 위한 이벤트 스냅샷 테이블이다.
+-- NOTE : 모든 row는 costs.ct_sn을 조회 anchor로 가진다.
+-- NOTE : 화면 조회 시 다른 업무 테이블 조인을 지양하기 위해 사건 금액, 담당자명, 발생시각, 상세 문구를 insert 시점에 기록한다.
+-- NOTE : target_type/target_sn은 원천 추적용 참조이며, 화면 구성을 위한 필수 join 기준이 아니다.
+-- NOTE : 이벤트별 값 기록 기준
+--        - COST_CREATED       : 금액=ct_price+ct_tax, 담당자=비용 등록자명, 일시=비용 등록 완료 시각, 상세=현재 상세값 없음 또는 비용 메모 검토, target=COSTS/ct_sn
+--        - PAYABLE_REQUESTED  : 금액=pbl_total_amount, 담당자=기안자명, 일시=pbl_requested_at, 상세=pbl_req_note, target=PAYABLES/pbl_sn
+--        - PAYABLE_REJECTED   : 금액=pbl_total_amount, 담당자=응답자명, 일시=pbl_responded_at, 상세=pbl_res_note, target=PAYABLES/pbl_sn
+--        - PAYABLE_APPROVED   : 금액=pbl_total_amount, 담당자=응답자명, 일시=pbl_responded_at, 상세=pbl_res_note, target=PAYABLES/pbl_sn
+--        - TRANSFER_COMPLETED : 금액=pay_amount, 담당자=처리자명, 일시=pay_paid_at, 상세=pay_note, target=PAYMENTS/pay_sn
+--        - CARD_SUBMITTED     : 금액=pay_amount, 담당자=제출자명, 일시=카드 제출 완료 시각, 상세=UI에서 추가 입력받은 텍스트, target=PAYMENTS/pay_sn
+--        - CASH_REPORTED      : 금액=ct_price+ct_tax, 담당자=현금보고 버튼을 누른 사용자명, 일시=현금보고 버튼을 누른 시각, 상세=UI에서 추가 입력받은 텍스트, target=COSTS/ct_sn
+--        - REFUND_COST_CREATED: 금액=환불 cost 총액, 담당자=환불 비용 등록자명, 일시=환불 비용 등록 완료 시각, 상세=현재 상세값 없음 또는 비용 메모 검토, target=COSTS/refund ct_sn
+--        - REFUND_REQUESTED   : 금액=환불 요청금액, 담당자=요청자명, 일시=환불 처리 요청 시각, 상세=pbl_req_note, target=PAYABLES/pbl_sn
+--        - REFUND_CONFIRMED   : 금액=pay_amount, 담당자=처리자명, 일시=pay_paid_at, 상세=pay_note, target=PAYMENTS/pay_sn
+--        - PAYABLE_CANCELLED  : 금액=pbl_total_amount, 담당자=지급요청 취소 액션 수행자명, 일시=지급요청 취소 액션 수행 시각, 상세=UI에서 추가 입력받은 텍스트, target=PAYABLES/pbl_sn
+--        - COST_CANCELLED     : 금액=ct_price+ct_tax, 담당자=비용 취소 액션 수행자명, 일시=비용 취소 액션 수행 시각, 상세=UI에서 추가 입력받은 텍스트, target=COSTS/ct_sn
+-- ======================================================================
+CREATE TABLE finance_history_events (
+  fhe_sn BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '재무 처리 이력 이벤트 PK',
+  fhe_ct_sn BIGINT UNSIGNED NOT NULL COMMENT '이력 조회 기준 비용 PK(costs.ct_sn). 모든 재무 처리 이력은 특정 cost 기준으로 조회된다.',
+
+  fhe_event_type ENUM(
+    'COST_CREATED',
+    'PAYABLE_REQUESTED',
+    'PAYABLE_REJECTED',
+    'PAYABLE_APPROVED',
+    'TRANSFER_COMPLETED',
+    'CARD_SUBMITTED',
+    'CASH_REPORTED',
+    'REFUND_COST_CREATED',
+    'REFUND_REQUESTED',
+    'REFUND_CONFIRMED',
+    'PAYABLE_CANCELLED',
+    'COST_CANCELLED'
+  ) NOT NULL COMMENT '재무 처리 이력 이벤트 유형(ENUM) | COST_CREATED:비용 등록, PAYABLE_REQUESTED:지급요청 기안, PAYABLE_REJECTED:지급요청 반려, PAYABLE_APPROVED:지급 승인, TRANSFER_COMPLETED:이체 완료, CARD_SUBMITTED:카드 제출 완료, CASH_REPORTED:현금 보고 완료, REFUND_COST_CREATED:환불 비용 등록, REFUND_REQUESTED:환불 처리 요청, REFUND_CONFIRMED:환불 확인 완료, PAYABLE_CANCELLED:지급요청 취소, COST_CANCELLED:비용 취소. 화면 제목/강조/아이콘 선택 기준이며, 이벤트 발생 시 서비스가 세팅한다.',
+
+  fhe_event_amount DECIMAL(18,2) NOT NULL COMMENT '사건 금액. 이벤트 발생 시점에 화면에 표시할 금액을 스냅샷으로 저장',
+  fhe_event_ccy CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '사건 금액 통화',
+  fhe_actor_name VARCHAR(100) NOT NULL COMMENT '사건 담당자명. 화면 표시 안정성을 위해 이벤트 발생 시점의 이름을 저장',
+  fhe_occurred_at DATETIME NOT NULL COMMENT '사건 발생시각(업무 이벤트 시각). 화면 표시값',
+  fhe_detail_text VARCHAR(500) NULL COMMENT '사건 상세 문구. 반려 사유, 승인 의견, 거래번호, UI 입력 텍스트 등 이벤트별 상세 표시값',
+
+  fhe_target_type VARCHAR(30) NULL COMMENT '원천 추적용 대상 타입. Allowed values: COSTS, PAYABLES, PAYMENTS. 이벤트 발생 시 서비스가 세팅한다.',
+  fhe_target_sn BIGINT UNSIGNED NULL COMMENT '원천 추적용 대상 PK 값. fhe_target_type에 의해 해석되는 동적 참조 키',
+
+  fhe_create_dt DATETIME NOT NULL COMMENT '레코드 생성일시',
+
+  PRIMARY KEY (fhe_sn),
+  KEY idx_fhe_ct_sn (fhe_ct_sn),
+  CONSTRAINT fk_fhe_cost
+    FOREIGN KEY (fhe_ct_sn) REFERENCES costs(ct_sn)
+) COMMENT='재무 처리 이력 이벤트(화면 표시용 스냅샷)' AUTO_INCREMENT=100;
 
 
 CREATE TABLE tax_invoices (
