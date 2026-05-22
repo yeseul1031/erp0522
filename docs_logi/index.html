@@ -1,0 +1,1961 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeoBH ERP - 입출고목록(SCR-PUR-001)</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel Download -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.2.1/index.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F0F2F5;
+        }
+
+        .grid-header {
+            background-color: #FAFAFA;
+            border-bottom: 1px solid #F0F0F0;
+        }
+
+        .grid-row {
+            border-bottom: 1px solid #F0F0F0;
+            transition: background-color 0.2s;
+        }
+
+        .grid-row:hover {
+            background-color: #FAFAFA;
+        }
+
+        .grid-row-project {
+            background-color: #FBFBFB;
+        }
+
+        .edited {
+            background-color: #FFFBE6;
+        }
+
+        .sidebar-item {
+            transition: all 0.2s;
+        }
+
+        .sidebar-item.selected {
+            background-color: #0F172A;
+            /* Slate 900 */
+            color: #FFFFFF;
+        }
+
+        .sidebar-item:hover:not(.selected) {
+            background-color: #F8FAFC;
+        }
+
+        /* Hide scrollbar for sidebar */
+        .sidebar-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .sidebar-scroll::-webkit-scrollbar-thumb {
+            background-color: #E2E8F0;
+            border-radius: 4px;
+        }
+
+        /* Merged Item Styling - Intuitive Locks & Edits */
+        .item-locked {
+            background-color: #F1F5F9 !important;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255, 255, 255, 0.5) 10px, rgba(255, 255, 255, 0.5) 20px);
+            opacity: 0.8;
+            cursor: not-allowed;
+            pointer-events: none;
+            position: relative;
+        }
+
+        .item-locked input {
+            background-color: transparent !important;
+            border-color: #E2E8F0 !important;
+            color: #94A3B8 !important;
+        }
+
+        .item-editable {
+            background-color: #F0F9FF !important;
+            /* Subtle blue highlight */
+            border-left: 2px solid #3B82F6;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .marker-purple {
+            background-color: #818CF8;
+            /* Indigo 400 */
+        }
+
+        /* Dev Guide Mode Styling */
+        .sticky-memo {
+            position: fixed;
+            background: #FEF9C3;
+            border: 1px solid #FDE047;
+            padding: 10px 14px;
+            border-radius: 8px;
+            box-shadow: 4px 4px 15px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            font-size: 11px;
+            color: #854D0E;
+            max-width: 480px;
+            width: 480px;
+            line-height: 1.6;
+            pointer-events: auto;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+        }
+
+        .sticky-memo::before {
+            content: 'DESCRIPTION';
+            display: block;
+            font-size: 9px;
+            font-weight: 900;
+            margin-bottom: 4px;
+            color: #A16207;
+            letter-spacing: 0.05em;
+        }
+
+        .sticky-memo textarea {
+            background: transparent;
+            border: 1px solid rgba(133, 77, 14, 0.2);
+            width: 100%;
+            height: 320px;
+            font-size: 11px;
+            color: #854D0E;
+            font-family: inherit;
+            resize: none;
+            padding: 4px;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        .sticky-memo textarea:focus {
+            background: rgba(255, 255, 255, 0.5);
+            border-color: #A16207;
+        }
+
+        .dev-marker {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 14px;
+            height: 14px;
+            background: #FACC15;
+            border: 2px solid white;
+            border-radius: 9999px;
+            z-index: 50;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            pointer-events: none;
+        }
+
+        .dev-guide-target {
+            position: relative !important;
+        }
+
+        .dev-guide-target:hover {
+            outline: 2px solid #FACC15;
+            outline-offset: 2px;
+        }
+
+        @keyframes dev-pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.3);
+                opacity: 0.7;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .anim-pulse {
+            animation: dev-pulse 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+
+<body class="bg-[#F0F2F5]">
+    <div id="app" class="h-screen flex flex-col overflow-hidden">
+        <!-- New GNB matching image -->
+        <header class="bg-white border-b border-gray-200 h-[60px] flex items-center justify-between px-6 shrink-0 z-20">
+            <div class="flex items-center h-full">
+                <div class="text-[20px] font-black tracking-tight mr-10 text-gray-900 flex items-center">
+                    <span class="text-blue-600 mr-1">NEO</span> BH
+                </div>
+                <!-- Navigation -->
+                <nav class="flex h-full">
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-500 hover:text-gray-900 text-[14px] font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                            </path>
+                        </svg> Home
+                    </a>
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-500 hover:text-gray-900 text-[14px] font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                        </svg> 공고 정보
+                    </a>
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-500 hover:text-gray-900 text-[14px] font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                            </path>
+                        </svg> 거래처 정보
+                    </a>
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-500 hover:text-gray-900 text-[14px] font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                        </svg> 품목 정보
+                    </a>
+                    <!-- Active Menu -->
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-900 text-[14px] font-bold border-b-[3px] border-gray-900 transition-colors relative top-[1.5px]">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20">
+                            </path>
+                        </svg> 입출고관리
+                    </a>
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-500 hover:text-gray-900 text-[14px] font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z">
+                            </path>
+                        </svg> 관심 공고
+                    </a>
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-500 hover:text-gray-900 text-[14px] font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1">
+                            </path>
+                        </svg> 자주 가는 사이트
+                    </a>
+                    <a href="#"
+                        class="flex items-center px-4 h-full text-gray-500 hover:text-gray-900 text-[14px] font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
+                        </svg> 업무 현황
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Role Toggle Switcher (Integrated from index_merged) -->
+            <div class="flex bg-gray-100 p-1 rounded-lg ml-6">
+                <button @click="activeUserId = 'kim'"
+                    :class="activeUserId === 'kim' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'"
+                    class="px-3 py-1 text-[11px] rounded-md transition-all flex items-center">
+                    <span class="w-2 h-2 rounded-full bg-blue-500 mr-2" v-if="activeUserId === 'kim'"></span>
+                    구매오너: 김철수
+                </button>
+                <button @click="activeUserId = 'lee'"
+                    :class="activeUserId === 'lee' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'"
+                    class="px-3 py-1 text-[11px] rounded-md transition-all flex items-center ml-1">
+                    <span class="w-2 h-2 rounded-full marker-purple mr-2" v-if="activeUserId === 'lee'"></span>
+                    연관담당자: 이영희
+                </button>
+                <button @click="activeUserId = 'manager'; viewMode = 'project'; resetFilters();"
+                    :class="activeUserId === 'manager' ? 'bg-white shadow-sm text-red-600 font-bold' : 'text-gray-500 hover:text-gray-700'"
+                    class="px-3 py-1 text-[11px] rounded-md transition-all flex items-center ml-1">
+                    <span class="w-2 h-2 rounded-full bg-red-500 mr-2" v-if="activeUserId === 'manager'"></span>
+                    중간관리자(팀장)
+                </button>
+            </div>
+
+            <!-- Dev Guide Toggle -->
+            <button @click="devGuideMode = !devGuideMode"
+                :class="devGuideMode ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-inner' : 'bg-gray-50 border-gray-200 text-gray-400'"
+                class="ml-3 px-3 py-1 text-[10px] font-bold border rounded-md transition-all flex items-center hover:bg-amber-50">
+                <span class="w-2 h-2 rounded-full bg-amber-400 mr-2" :class="devGuideMode ? 'anim-pulse' : ''"></span>
+                DEV GUIDE {{ devGuideMode ? 'ON' : 'OFF' }}
+            </button>
+
+            <div class="flex items-center space-x-4">
+                <div
+                    class="flex items-center cursor-pointer hover:bg-gray-50 py-1 px-3 rounded-full transition-colors border border-gray-100">
+                    <div class="w-7 h-7 rounded-full text-white flex items-center justify-center text-[12px] font-bold mr-2"
+                        :class="activeUserId === 'manager' ? 'bg-red-500' : 'bg-blue-500'">
+                        {{ activeUser.name[0] }}</div>
+                    <span class="text-[13px] font-medium text-gray-700 mr-1">{{ activeUser.name }}님 <span
+                            class="text-[11px] text-gray-400">({{ activeUser.role }})</span></span>
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <!-- Team Member Filter for Middle Managers -->
+        <div v-if="activeUserId === 'manager'"
+            class="px-6 py-2.5 border-b border-gray-200 bg-white flex items-center justify-between shrink-0 shadow-sm z-20 relative">
+            <div class="flex items-center gap-1">
+                <span class="text-[10px] font-bold text-gray-400 mr-2 uppercase tracking-wider">팀원 입출고현황 열람</span>
+                <div class="flex gap-1.5 relative">
+                    <button @click="managerViewTarget = 'kim'"
+                        class="px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-2 border relative"
+                        :class="managerViewTarget === 'kim' ? 'bg-gray-800 text-white border-gray-800 shadow-sm' : 'bg-white text-gray-500 border-gray-100 hover:border-gray-300'">
+                        <span
+                            class="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[9px] text-gray-600 font-black">김</span>
+                        김철수
+                    </button>
+                    <button @click="managerViewTarget = 'lee'"
+                        class="px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-2 border relative"
+                        :class="managerViewTarget === 'lee' ? 'bg-gray-800 text-white border-gray-800 shadow-sm' : 'bg-white text-gray-500 border-gray-100 hover:border-gray-300'">
+                        <span
+                            class="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[9px] text-gray-600 font-black">이</span>
+                        이영희
+                    </button>
+                </div>
+            </div>
+            <div class="ml-auto flex items-center gap-2">
+                <span
+                    class="text-[11px] font-bold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1.5 rounded-md flex items-center shadow-sm">
+                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                        </path>
+                    </svg>
+                    열람 모드 (Read-only)
+                </span>
+            </div>
+        </div>
+
+        <div v-if="activeUserId === 'lee'"
+            class="bg-indigo-50 border-b border-indigo-100 px-6 py-2 flex items-center shrink-0">
+            <svg class="w-4 h-4 text-indigo-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span class="text-[12px] text-indigo-700 font-medium">
+                공지: 본 발주서는 병합 발송되었습니다. 귀하의 품목만 수정 가능합니다.
+            </span>
+        </div>
+
+        <div class="flex flex-1 overflow-hidden">
+            <!-- Left Sidebar: Project List -->
+            <div :class="isSidebarOpen ? 'w-[260px]' : 'w-[52px] cursor-pointer hover:bg-gray-50'"
+                @click="!isSidebarOpen && (isSidebarOpen = true)"
+                class="bg-white border-r border-gray-200 flex flex-col shrink-0 transition-all duration-300 relative overflow-hidden group">
+                <!-- Sidebar Title area -->
+                <div class="px-3 py-4 flex items-center h-[56px]"
+                    :class="isSidebarOpen ? 'justify-between' : 'justify-center'">
+                    <div v-show="isSidebarOpen" class="flex items-center min-w-[180px]">
+                        <svg class="w-5 h-5 text-gray-700 mr-2 shrink-0" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                            </path>
+                        </svg>
+                        <h2 class="font-bold text-[14px] text-gray-800 tracking-tight whitespace-nowrap">수급 현황 모니터링</h2>
+                    </div>
+                    <button @click.stop="isSidebarOpen = !isSidebarOpen"
+                        class="text-gray-400 hover:text-gray-800 p-1.5 rounded hover:bg-gray-100 transition-colors shrink-0"
+                        :title="isSidebarOpen ? '사이드바 접기' : '사이드바 펼치기'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path v-if="isSidebarOpen" stroke-linecap="round" stroke-linejoin="round"
+                                d="M15 19l-7-7 7-7"></path>
+                            <path v-else stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- View Toggle Buttons -->
+                <div v-show="isSidebarOpen" class="px-4 pb-3">
+                    <div class="flex bg-gray-100 p-1 rounded-lg">
+                        <button @click="viewMode = 'po'; resetFilters();"
+                            :class="viewMode === 'po' ? 'bg-white shadow-sm text-gray-900 font-bold' : 'text-gray-500 hover:text-gray-700'"
+                            class="flex-1 py-1.5 text-[12px] font-medium rounded-md transition-all relative"
+                            @mouseenter="showMemo($event, 'view_po')" @mouseleave="hideMemo">
+                            발주서로 보기 (입고)
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-1 top-1"></div>
+                        </button>
+                        <button @click="viewMode = 'project'; resetFilters();"
+                            :class="viewMode === 'project' ? 'bg-white shadow-sm text-gray-900 font-bold' : 'text-gray-500 hover:text-gray-700'"
+                            class="flex-1 py-1.5 text-[12px] font-medium rounded-md transition-all relative"
+                            @mouseenter="showMemo($event, 'view_project')" @mouseleave="hideMemo">
+                            프로젝트로 보기 (출고)
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-1 top-1"></div>
+                        </button>
+                    </div>
+                </div>
+
+                <div v-show="isSidebarOpen" class="px-4 pb-4">
+                    <div class="relative">
+                        <input type="text" v-model="searchQuery"
+                            :placeholder="viewMode === 'project' ? '프로젝트명 검색' : '발주서 번호 또는 거래처 검색'"
+                            class="w-full border border-gray-300 rounded px-3 py-2 pl-8 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                        <svg class="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Project List (Shown when viewMode === 'project') -->
+                <div v-show="isSidebarOpen && viewMode === 'project'"
+                    class="flex-1 overflow-y-auto px-3 pb-4 space-y-1 sidebar-scroll">
+                    <div v-for="proj in filteredProjects" :key="proj.id" @click="selectProject(proj)"
+                        class="sidebar-item px-3 py-2.5 rounded-lg cursor-pointer text-[13px]"
+                        :class="{'selected': selectedProjectId === proj.id}">
+                        <div class="flex items-center justify-between">
+                            <div class="font-medium truncate flex-1 pr-2" :title="proj.name">{{ proj.name }}</div>
+                            <svg v-if="selectedProjectId === proj.id" class="w-4 h-4 text-white opacity-80 shrink-0"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7">
+                                </path>
+                            </svg>
+                        </div>
+                        <div class="text-[11px] flex justify-between items-center mt-2">
+                            <span :class="selectedProjectId === proj.id ? 'text-gray-400' : 'text-gray-400'"
+                                class="shrink-0"></span>
+                            <!-- Dual Progress Summary -->
+                            <div class="flex-1 ml-2 flex items-center justify-end space-x-1 border-l pl-2"
+                                :class="selectedProjectId === proj.id ? 'border-slate-700' : 'border-gray-200'">
+                                <div class="flex items-center"
+                                    :class="projectInboundProgress(proj) > 100 ? 'text-indigo-500' : (selectedProjectId === proj.id ? 'text-blue-300' : 'text-blue-500')"
+                                    title="입고 진행률">
+                                    <div class="w-1.5 h-1.5 rounded-full mr-1"
+                                        :class="projectInboundProgress(proj) > 100 ? 'bg-indigo-500 shadow-[0_0_5px_rgba(99,102,241,0.5)]' : (selectedProjectId === proj.id ? 'bg-blue-300' : 'bg-blue-500')">
+                                    </div>
+                                    <span class="font-bold font-mono">{{ projectInboundProgress(proj) }}%</span>
+                                </div>
+                                <span
+                                    :class="selectedProjectId === proj.id ? 'text-slate-600' : 'text-gray-300'">/</span>
+                                <div class="flex items-center"
+                                    :class="selectedProjectId === proj.id ? 'text-green-300' : 'text-green-500'"
+                                    title="출고 진행률">
+                                    <div class="w-1.5 h-1.5 rounded-full mr-1"
+                                        :class="selectedProjectId === proj.id ? 'bg-green-300' : 'bg-green-500'">
+                                    </div>
+                                    <span class="font-bold font-mono">{{ projectOutboundProgress(proj) }}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="filteredProjects.length === 0" class="text-center text-gray-500 text-sm mt-4">
+                        검색 결과가 없습니다.
+                    </div>
+                </div>
+
+                <!-- PO List (Shown when viewMode === 'po') -->
+                <div v-show="isSidebarOpen && viewMode === 'po'"
+                    class="flex-1 overflow-y-auto px-3 pb-4 space-y-1 sidebar-scroll">
+                    <div v-for="po in filteredPos" :key="po.poNumber" @click="selectPoItem(po)"
+                        class="sidebar-item px-3 py-2.5 rounded-lg cursor-pointer text-[13px]"
+                        :class="{'selected': selectedPoNumber === po.poNumber}">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center flex-1 pr-2 overflow-hidden">
+                                <div class="font-medium truncate" :title="po.poNumber">{{ po.poNumber }}</div>
+                                <!-- Dev Marker for PO 4066 (Visible only in Dev Guide Mode) -->
+                                <div v-if="po.poNumber === 'NB__O_4066' && devGuideMode"
+                                    @mouseenter="showMemo($event, 'po_4066_exceptions')" @mouseleave="hideMemo"
+                                    @click.stop="showMemo($event, 'po_4066_exceptions')"
+                                    class="ml-2 w-3 h-3 bg-yellow-400 border-2 border-white rounded-full shadow-sm anim-pulse cursor-help shrink-0">
+                                </div>
+                            </div>
+                            <svg v-if="selectedPoNumber === po.poNumber" class="w-4 h-4 text-white opacity-80 shrink-0"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7">
+                                </path>
+                            </svg>
+                        </div>
+                        <div class="text-[11px] flex justify-between items-center mt-2">
+                            <span :class="selectedPoNumber === po.poNumber ? 'text-gray-400' : 'text-gray-400'"
+                                class="shrink-0 max-w-[80px] truncate" :title="po.vendorName">{{ po.vendorName }}</span>
+                            <div class="flex-1 ml-2 flex items-center justify-end space-x-1 border-l pl-2"
+                                :class="selectedPoNumber === po.poNumber ? 'border-slate-700' : 'border-gray-200'">
+                                <div class="flex items-center"
+                                    :class="poInboundProgress(po) > 100 ? 'text-indigo-400' : (selectedPoNumber === po.poNumber ? 'text-blue-300' : 'text-blue-500')"
+                                    title="입고 진행률">
+                                    <div class="w-1.5 h-1.5 rounded-full mr-1"
+                                        :class="poInboundProgress(po) > 100 ? 'bg-indigo-400 shadow-[0_0_5px_rgba(129,140,248,0.5)]' : (selectedPoNumber === po.poNumber ? 'bg-blue-300' : 'bg-blue-500')">
+                                    </div>
+                                    <span class="font-bold font-mono">{{ poInboundProgress(po) }}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="filteredPos.length === 0" class="text-center text-gray-500 text-sm mt-4">
+                        검색 결과가 없습니다.
+                    </div>
+                </div>
+
+                <!-- Expanded vertical text when closed -->
+                <div v-show="!isSidebarOpen" class="flex-1 flex justify-center pt-8 pointer-events-none opacity-50">
+                    <div class="text-[13px] font-bold text-gray-800 tracking-widest whitespace-nowrap"
+                        style="writing-mode: vertical-rl;">
+                        진행중인 프로젝트
+                    </div>
+                </div>
+            </div>
+
+
+
+            <!-- Right Content: Metric Cards & Main Grid -->
+            <div class="flex-1 flex flex-col overflow-hidden bg-[#F0F2F5]">
+
+                <!-- Description Memos Layer (Description Sticky Notes) -->
+                <div v-if="devGuideMode && memoVisible" class="sticky-memo shadow-2xl"
+                    :style="{ left: memoPos.x + 'px', top: memoPos.y + 'px' }" @mouseenter="keepMemo"
+                    @mouseleave="hideMemo">
+                    <textarea v-model="memoDictionary[activeMemoKey]" @input="saveMemo(activeMemoKey)"></textarea>
+                    <div class="mt-1 text-[9px] text-amber-600/60 flex justify-between items-center italic">
+                        <span>* 실시간 수정 가능 (Simulation 전용)</span>
+                    </div>
+                </div>
+
+                <!-- Global Metric Cards (Top Section) -->
+                <div
+                    class="bg-white border-b border-gray-200 px-6 py-3 shrink-0 flex justify-center z-10 shadow-sm object-top">
+                    <div class="grid grid-cols-3 gap-6 w-full max-w-7xl mx-auto">
+                        <div @mouseenter="showMemo($event, 'metric_delayed')" @mouseleave="hideMemo"
+                            class="flex items-center justify-between border-gray-200 border-l-4 border-l-red-500 pl-3 py-1 transition-all"
+                            :class="{ 'dev-guide-target': devGuideMode, 'hover:bg-red-50' : true }">
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse"></div>
+                            <div class="text-[13px] text-gray-700 font-bold tracking-tight">미입고 지연 품목</div>
+                            <div class="text-xl font-black text-red-500">{{ delayedItemsCount }} <span
+                                    class="text-xs font-medium text-gray-400">건</span></div>
+                        </div>
+                        <div @mouseenter="showMemo($event, 'metric_today')" @mouseleave="hideMemo"
+                            class="flex items-center justify-between border-gray-200 border-l-4 border-l-blue-500 pl-3 py-1 transition-all"
+                            :class="{ 'dev-guide-target': devGuideMode, 'hover:bg-blue-50' : true }">
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse"></div>
+                            <div class="text-[13px] text-gray-700 font-bold tracking-tight">오늘 입고 예정</div>
+                            <div class="text-xl font-black text-blue-500">{{ todayExpectedCount }} <span
+                                    class="text-xs font-medium text-gray-400">건</span></div>
+                        </div>
+                        <div @mouseenter="showMemo($event, 'metric_week')" @mouseleave="hideMemo"
+                            class="flex items-center justify-between border-gray-200 border-l-4 border-l-green-500 pl-3 py-1 transition-all"
+                            :class="{ 'dev-guide-target': devGuideMode, 'hover:bg-green-50' : true }">
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse"></div>
+                            <div class="text-[13px] text-gray-700 font-bold tracking-tight">이번 주 출고 예정</div>
+                            <div class="text-xl font-black text-green-500">{{ weekOutboundCount }} <span
+                                    class="text-xs font-medium text-gray-400">건</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-6 flex flex-col gap-6 flex-1 overflow-y-auto relative">
+                    <!-- Page Title Area (Replaces old Header) -->
+                    <div
+                        class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 shrink-0 flex justify-between items-start">
+                        <div>
+                            <div class="flex items-center mb-4">
+                                <div
+                                    class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center mr-3 shadow-md text-white">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h1 class="text-[20px] font-bold text-gray-900 tracking-tight flex items-center">
+                                        입출고 처리
+                                        <button @mouseenter="showMemo($event, 'page_description')"
+                                            @mouseleave="hideMemo"
+                                            class="ml-2 text-gray-400 hover:text-blue-500 transition-colors relative">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                                                </path>
+                                            </svg>
+                                            <div v-if="devGuideMode"
+                                                class="dev-marker anim-pulse absolute -right-1 -top-1"></div>
+                                        </button>
+                                    </h1>
+                                    <p class="text-[12px] text-gray-500 mt-0.5">SCR-INB-001</p>
+                                </div>
+                            </div>
+                            <div class="mt-6 flex flex-wrap items-center gap-x-8 gap-y-4 pt-5 border-t border-gray-100">
+                                <div class="flex-1 flex flex-col min-w-[200px]">
+                                    <label
+                                        class="text-[10px] font-bold text-gray-400 uppercase mb-1.5 tracking-wider">거래처
+                                        검색 (Vendor)</label>
+                                    <div class="relative">
+                                        <input type="text" v-model="filterVendor" placeholder="거래처명을 입력하세요..."
+                                            class="w-full border border-gray-200 rounded-lg px-3 py-2 pl-9 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-gray-50 transition-all font-medium">
+                                        <svg class="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none"
+                                            stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                                            </path>
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-col">
+                                    <label
+                                        class="text-[10px] font-bold text-gray-400 uppercase mb-1.5 tracking-wider">상태</label>
+                                    <select v-model="filterStatus"
+                                        class="border border-gray-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-gray-50 min-w-[160px] transition-all cursor-pointer font-medium">
+                                        <option value="all">전체 상태</option>
+                                        <option value="active">미입고/부분입고 (Active)</option>
+                                        <option value="completed">입고 완료 (Done)</option>
+                                    </select>
+                                </div>
+
+
+                                <div class="flex-1 flex flex-col min-w-[300px]">
+                                    <label
+                                        class="text-[10px] font-bold text-gray-400 uppercase mb-1.5 tracking-wider">품목명
+                                        통합 검색</label>
+                                    <div class="flex gap-2">
+                                        <div class="relative flex-1">
+                                            <input type="text" v-model="filterItemSearch"
+                                                placeholder="찾으시는 품목명 또는 발주번호를 입력하세요..."
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 pl-10 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-gray-50 transition-all font-medium">
+                                            <svg class="w-4 h-4 text-gray-400 absolute left-3.5 top-2.5" fill="none"
+                                                stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                            </svg>
+                                        </div>
+                                        <button @click="resetFilters"
+                                            class="px-4 py-2 bg-white border border-gray-200 text-gray-500 rounded-lg text-[13px] font-bold hover:bg-gray-50 transition-all shadow-sm shrink-0 flex items-center">
+                                            <svg class="w-4 h-4 mr-1.5 opacity-70" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                                </path>
+                                            </svg>
+                                            <span>초기화</span>
+                                        </button>
+                                        <button @click="triggerSearch" @mouseenter="showMemo($event, 'search_filters')"
+                                            @mouseleave="hideMemo"
+                                            class="px-5 py-2 bg-blue-600 text-white rounded-lg text-[13px] font-bold hover:bg-blue-700 transition-all shadow-sm shrink-0 flex items-center relative">
+                                            <span>조회</span>
+                                            <div v-if="devGuideMode"
+                                                class="dev-marker anim-pulse absolute -right-1 -top-1">
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button @click="downloadExcel"
+                                class="flex items-center px-4 py-2 bg-white border border-gray-200 rounded-lg text-[13px] font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-sm hover:border-gray-300">
+                                <svg class="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                    </path>
+                                </svg>
+                                엑셀 다운로드
+                            </button>
+                        </div>
+                    </div>
+
+
+                    <!-- Contextual Stats: Active Project Progress -->
+                    <div class="grid grid-cols-2 gap-4 shrink-0"
+                        v-if="viewMode === 'project' && activeProject && !vendorSearchQuery">
+                        <div @mouseenter="showMemo($event, 'metric_proj_inbound')" @mouseleave="hideMemo"
+                            class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center relative overflow-hidden cursor-help">
+                            <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-2 top-2"></div>
+                            <div class="text-[14px] text-gray-700 font-bold tracking-tight pl-2">선택 프로젝트 입고 진행률</div>
+                            <div class="text-3xl font-black text-blue-600">{{ projectInboundProgress(activeProject)
+                                }}<span class="text-sm font-medium text-gray-400 ml-1">%</span></div>
+                        </div>
+                        <div @mouseenter="showMemo($event, 'metric_proj_outbound')" @mouseleave="hideMemo"
+                            class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center relative overflow-hidden cursor-help">
+                            <div class="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div>
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-2 top-2"></div>
+                            <div class="text-[14px] text-gray-700 font-bold tracking-tight pl-2">선택 프로젝트 출고 진행률</div>
+                            <div class="text-3xl font-black text-green-600">{{ projectOutboundProgress(activeProject)
+                                }}<span class="text-sm font-medium text-gray-400 ml-1">%</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Contextual Stats: Active PO Progress -->
+                    <div class="grid gap-4 shrink-0" v-if="viewMode === 'po' && activePo && !vendorSearchQuery">
+                        <div @mouseenter="showMemo($event, 'metric_po_inbound')" @mouseleave="hideMemo"
+                            class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center relative overflow-hidden cursor-help">
+                            <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                            <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-2 top-2"></div>
+                            <div class="text-[14px] text-gray-700 font-bold tracking-tight pl-2">선택 발주서 입고 진행률</div>
+                            <div class="text-3xl font-black text-blue-600">{{ poInboundProgress(activePo) }}<span
+                                    class="text-sm font-medium text-gray-400 ml-1">%</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Contextual Guide Bar -->
+                    <div class="shrink-0 rounded-lg px-4 py-2.5 flex items-center gap-3 text-[12px] transition-all border"
+                        :class="viewMode === 'po' ? 'bg-blue-50/80 border-blue-200/60 text-blue-700' : 'bg-green-50/80 border-green-200/60 text-green-700'">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white text-[11px] font-black"
+                            :class="viewMode === 'po' ? 'bg-blue-500' : 'bg-green-500'">
+                            {{ viewMode === 'po' ? '1' : '2' }}
+                        </div>
+                        <div>
+                            <span v-if="viewMode === 'po'">발주한 물품이 도착하면, 좌측에서 해당 발주서를 선택하고 <b class="text-blue-800">[입고수량]</b>을 기입해주세요. → 입력한 수량이 <b>재고</b>로 확보됩니다.</span>
+                            <span v-else>재고가 확보된 물품을 현장에 보낼 때, 해당 프로젝트의 <b class="text-green-800">[출고실행]</b> 수량을 기입해주세요. → 현장 <b>납품</b>으로 처리됩니다.</span>
+                        </div>
+                    </div>
+
+                    <!-- Main Grid Container -->
+                    <div v-if="(viewMode === 'project' && displayProjects.length > 0) || (viewMode === 'po' && displayPos.length > 0)"
+                        class="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col relative overflow-hidden">
+                        <div class="grid gap-3 p-3 grid-header font-semibold text-[13px] text-gray-700 items-center shrink-0"
+                            :style="{ 'grid-template-columns': viewMode === 'po' ? '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 110px 2.5fr' : '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 100px 110px 110px 2.5fr' }">
+                            <div class="text-center">NO.</div>
+                            <div class="relative" @mouseenter="showMemo($event, 'project_expand')"
+                                @mouseleave="hideMemo">
+                                품목 정보 (ITEM / PO)
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center relative" @mouseenter="showMemo($event, 'col_model')"
+                                @mouseleave="hideMemo">
+                                모델명/규격
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="relative pl-2" @mouseenter="showMemo($event, 'col_vendor')"
+                                @mouseleave="hideMemo">
+                                거래처명
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center relative" @mouseenter="showMemo($event, 'col_delivery_cond')"
+                                @mouseleave="hideMemo">
+                                납품조건
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center text-blue-600 relative bg-blue-50/50 rounded-t py-1"
+                                @mouseenter="showMemo($event, 'col_inbound_qty')" @mouseleave="hideMemo">
+                                내 물량
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center text-blue-600 relative rounded-t py-1 transition-all"
+                                :class="viewMode === 'po' ? 'bg-blue-100 border-b-2 border-blue-500 font-black' : 'bg-blue-50/50'"
+                                @mouseenter="showMemo($event, 'col_inbound_total')" @mouseleave="hideMemo">
+                                입고/전체
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center text-gray-400 relative"
+                                @mouseenter="showMemo($event, 'col_inbound_req_date')" @mouseleave="hideMemo">
+                                입고예정일
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center text-gray-400 relative"
+                                @mouseenter="showMemo($event, 'col_inbound_date')" @mouseleave="hideMemo">
+                                입고일자
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div v-if="viewMode === 'project'"
+                                class="text-center text-green-700 relative bg-green-100 rounded-t py-1 border-b-2 border-green-500 font-black"
+                                @mouseenter="showMemo($event, 'col_outbound_qty')" @mouseleave="hideMemo">
+                                출고실행
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div v-if="viewMode === 'project'"
+                                class="text-center text-green-700 relative bg-green-50/50 rounded-t py-1"
+                                @mouseenter="showMemo($event, 'col_outbound_date')" @mouseleave="hideMemo">
+                                출고일자
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center text-blue-600 relative"
+                                @mouseenter="showMemo($event, 'col_due_date')" @mouseleave="hideMemo">
+                                계약납기일
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                            <div class="text-center text-blue-600 relative" @mouseenter="showMemo($event, 'col_note')"
+                                @mouseleave="hideMemo">
+                                비고
+                                <div v-if="devGuideMode" class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                            </div>
+                        </div>
+
+                        <!-- Table Body -->
+                        <div class="overflow-y-auto flex-1 p-0 m-0">
+                            <template v-if="viewMode === 'project'">
+                                <template v-for="(renderProj, projectIndex) in displayProjects"
+                                    :key="'sp_'+renderProj.id">
+                                    <template v-if="isExpanded('project', renderProj.id)">
+                                        <template v-for="(po, poIndex) in renderProj.pos" :key="po.id">
+                                            <template v-for="(item, iIndex) in po.items" :key="item.id">
+                                                <div class="grid gap-3 p-2.5 items-center text-[12px] border-b border-gray-100 bg-white hover:bg-blue-50/30 transition-all font-medium"
+                                                    :class="{'edited': item.isEdited, 'item-locked': isItemLocked(item)}"
+                                                    style="grid-template-columns: 35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 100px 110px 110px 2.5fr;">
+                                                    <div class="text-center text-gray-400">{{ projectIndex + 1 }}-{{
+                                                        poIndex + 1 }}-{{ iIndex + 1 }}</div>
+
+                                                    <!-- 2: 품목명 -->
+                                                    <div class="flex items-center truncate">
+                                                        <span class="w-2 h-2 rounded-full mr-2 shrink-0 shadow-sm"
+                                                            :class="item.ownerId === 'lee' ? 'marker-purple' : 'bg-blue-400'"></span>
+                                                        <span class="text-gray-900 font-bold truncate"
+                                                            :title="item.name">{{ item.name }}</span>
+                                                        <span
+                                                            class="text-[9px] text-blue-500 font-bold ml-2 bg-blue-50 px-1 py-0.5 rounded border border-blue-100 shrink-0">{{
+                                                            po.poNumber }}</span>
+                                                    </div>
+
+                                                    <!-- 3: 모델명/규격 -->
+                                                    <div class="text-center text-gray-500 truncate"
+                                                        :title="item.modelSpec">{{ item.modelSpec || '-' }}</div>
+
+                                                    <!-- 4: 거래처명 -->
+                                                    <div class="text-gray-500 text-[11px] truncate font-medium">{{
+                                                        po.vendorName }}</div>
+
+                                                    <!-- 5: 납품조건 -->
+                                                    <div
+                                                        class="text-center text-gray-400 text-[11px] bg-gray-50 rounded py-0.5">
+                                                        {{ po.condition }}</div>
+
+                                                    <!-- 6: 내 물량 -->
+                                                    <div
+                                                        class="text-center font-bold text-gray-700 bg-gray-50/50 rounded py-1">
+                                                        {{ item.poQty }}</div>
+
+                                                    <!-- 7: 입고/전체 -->
+                                                    <div class="text-center font-black rounded py-1 transition-all relative cursor-help"
+                                                        @mouseenter="item.inbound > item.poQty ? showMemo($event, 'over_delivery_policy') : null"
+                                                        @mouseleave="hideMemo"
+                                                        :class="item.inbound > item.poQty ? 'text-indigo-600 bg-indigo-50 border border-indigo-100 shadow-sm' : 'text-blue-600 bg-blue-50/30'">
+                                                        <span class="text-[14px]">{{ item.inbound }}</span>
+                                                        <span class="text-[10px] text-gray-400 font-normal"> / {{
+                                                            item.poQty }}</span>
+                                                        <div v-if="item.inbound > item.poQty"
+                                                            class="text-[8px] mt-[-2px] text-indigo-400 font-bold uppercase tracking-tighter">
+                                                            OVER</div>
+                                                        <div v-if="devGuideMode && item.inbound > item.poQty"
+                                                            class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                                                    </div>
+
+                                                    <!-- 8: 입고예정일 -->
+                                                    <div class="text-center text-gray-400 font-medium text-[10px]">{{
+                                                        item.dueDate }}</div>
+
+                                                    <!-- 9: 입고일자 -->
+                                                    <div class="text-center text-gray-500 text-[10px]">{{
+                                                        item.inboundDate || '-' }}</div>
+
+                                                    <!-- 10: 출고실행 (Editable) -->
+                                                    <div class="px-1">
+                                                        <input type="number" v-model.number="item.outbound"
+                                                            @input="markEdited(item)" :disabled="isItemLocked(item)"
+                                                            class="border border-green-200 rounded p-0.5 w-full text-center font-bold text-green-700 focus:ring-2 focus:ring-green-500 bg-green-50/30">
+                                                    </div>
+
+                                                    <!-- 11: 출고일자 (Editable) -->
+                                                    <div class="px-1">
+                                                        <input type="date" v-model="item.outboundDate"
+                                                            @change="markEdited(item)" :disabled="isItemLocked(item)"
+                                                            class="border border-gray-200 rounded p-0.5 w-full text-[10px] text-center text-gray-600 bg-white shadow-sm">
+                                                    </div>
+
+                                                    <!-- 12: 계약납기일 (Core Data) -->
+                                                    <div class="text-center text-blue-700 font-bold text-[11px]">{{
+                                                        po.dueDate }}</div>
+
+                                                    <!-- 13: 비고 (Editable) -->
+                                                    <div class="px-1 h-full flex items-center relative">
+                                                        <input type="text" v-model="item.note" @input="markEdited(item)"
+                                                            :disabled="isItemLocked(item)" placeholder="메모 입력"
+                                                            class="border border-gray-100 rounded px-1.5 py-1 w-full text-[11px] text-gray-700 bg-white focus:outline-none focus:border-blue-300 shadow-sm">
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </template>
+                                    </template>
+                                </template>
+                            </template>
+                            </template>
+
+                            <template v-else-if="viewMode === 'po'">
+                                <template v-for="(po, poIndex) in displayPos" :key="'po_view_' + po.poNumber">
+                                    <!-- Vendor/PO Row (Level 1 in PO view) -->
+                                    <div class="grid gap-3 p-3 grid-row font-medium items-center text-[13px] sticky top-0 bg-gray-50 z-10 border-b border-gray-200"
+                                        :style="{ 'grid-template-columns': viewMode === 'po' ? '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 110px 2.5fr' : '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 100px 110px 110px 2.5fr' }">
+                                        <div class="text-center font-bold text-slate-400">{{ poIndex + 1 }}</div>
+                                        <div class="flex items-center cursor-pointer"
+                                            @click="toggleExpand('po_view', po.poNumber)">
+                                            <span class="mr-2">{{ isExpanded('po_view', po.poNumber) ? '▼' : '▶'
+                                                }}</span>
+                                            <span class="text-blue-700 font-bold truncate">{{ po.poNumber }} <span
+                                                    class="text-gray-400 text-xs ml-1">(PO)</span></span>
+                                            <!-- Dev Guide Marker for Exception Consolidated PO -->
+                                            <button v-if="devGuideMode && po.poNumber === 'NB__O_4066'"
+                                                @click.stop="showMemo($event, 'po_4066_exceptions')"
+                                                class="ml-2 w-4 h-4 bg-amber-400 rounded-full border-2 border-white shadow-sm anim-pulse flex-shrink-0 cursor-help"
+                                                title="예외 시나리오 콘솔리데이션 안내"></button>
+                                        </div>
+                                        <div class="text-center text-gray-400 font-mono">-</div> <!-- 3: 모델규격 -->
+                                        <div class="font-medium text-gray-700 pl-2">{{ po.vendorName }}</div>
+                                        <!-- 4: 거래처명 -->
+                                        <div class="text-center text-xs text-gray-600 bg-gray-100 rounded py-0.5">{{
+                                            po.condition }}</div> <!-- 5: 납품조건 -->
+                                        <div class="text-center font-bold text-gray-500">{{ totalPoQty(po) }}</div>
+                                        <!-- 6: 내물량 -->
+                                        <div class="text-center font-black transition-all"
+                                            :class="totalPoInbound(po) > totalPoQty(po) ? 'text-indigo-600 bg-indigo-50 rounded px-1' : 'text-blue-600'">
+                                            {{ totalPoInbound(po) }}
+                                            <span class="text-[10px] text-gray-400 font-normal">/ {{ totalPoQty(po)
+                                                }}</span>
+                                            <span v-if="totalPoInbound(po) > totalPoQty(po)"
+                                                class="ml-1 text-[9px] px-1 bg-indigo-600 text-white rounded-sm">SURPLUS</span>
+                                        </div> <!-- 7: 입고/전체 -->
+                                        <div class="text-center text-gray-400 font-medium text-[11px]">-</div>
+                                        <!-- 8: 입고예정일 -->
+                                        <div class="flex justify-center items-center"> <!-- 9: 입고일자 Bulk -->
+                                            <button v-if="activeUserId !== 'manager'"
+                                                @click.stop="applyBulkDatePoView(po, 'inboundDate')"
+                                                class="text-[10px] font-normal border border-blue-200 text-blue-500 hover:bg-blue-50 px-1.5 py-0.5 rounded shadow-sm">일괄입력</button>
+                                        </div>
+                                        <!-- Removed Outbound Columns for PO View -->
+                                        <div class="text-center text-gray-400">-</div>
+                                        <!-- 12: 계약납기일 (Not applicable at master PO level) -->
+                                        <div class="text-center text-gray-400">-</div> <!-- 13: 비고 -->
+                                    </div>
+
+                                    <!-- Item Groups inside PO (Level 2) -->
+                                    <template v-if="isExpanded('po_view', po.poNumber)">
+                                        <template v-for="(itemGroup, iIdx) in po.filteredItems" :key="itemGroup.id">
+                                            <!-- Item Header Row: Inbound managed here -->
+                                            <div class="grid gap-3 p-2 items-center text-[12px] bg-indigo-50/50 border-b border-indigo-100 sticky top-[48px] z-[5] hover:bg-indigo-100/50 transition-all"
+                                                :style="{ 'grid-template-columns': viewMode === 'po' ? '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 110px 2.5fr' : '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 100px 110px 110px 2.5fr' }">
+                                                <div class="text-center text-indigo-400 font-mono">{{ poIndex + 1 }}-{{
+                                                    iIdx + 1 }}</div>
+                                                <div class="flex items-center cursor-pointer"
+                                                    @click="toggleExpand('item_in_po', itemGroup.id)">
+                                                    <span class="mr-2 text-[10px] text-indigo-400">{{
+                                                        isExpanded('item_in_po', itemGroup.id) ? '▼' : '▶' }}</span>
+                                                    <span
+                                                        class="px-2 py-1 bg-indigo-600 text-white rounded text-[10px] font-bold mr-2 shadow-sm uppercase">Item</span>
+                                                    <span class="font-bold text-slate-800 truncate"
+                                                        :title="itemGroup.name">{{ itemGroup.name }}</span>
+                                                </div>
+                                                <div class="text-center text-gray-500 truncate text-[11px]">{{
+                                                    itemGroup.modelSpec || 'STD-SPEC-01' }}</div>
+                                                <div class="text-center text-gray-500 text-[11px] truncate">{{
+                                                    po.vendorName }}</div>
+                                                <div
+                                                    class="text-center text-gray-400 text-[11px] bg-gray-50/50 rounded py-0.5">
+                                                    {{ po.condition }}</div>
+                                                <div class="text-center font-bold text-slate-600 bg-white/50 rounded">{{
+                                                    itemGroup.totalPoQty }}</div>
+
+                                                <!-- Unified Inbound Column (Level 2) -->
+                                                <div class="text-center font-black rounded py-1 transition-all relative cursor-help flex flex-col items-center justify-center min-w-[70px]"
+                                                    @mouseenter="itemGroup.inbound > itemGroup.totalPoQty ? showMemo($event, 'over_delivery_policy') : null"
+                                                    @mouseleave="hideMemo"
+                                                    :class="itemGroup.inbound > itemGroup.totalPoQty ? 'text-indigo-600 bg-indigo-50 border border-indigo-200' : 'text-blue-600 bg-blue-50/50'">
+                                                    <div class="flex items-center justify-center">
+                                                        <input type="number" v-model.number="itemGroup.inbound"
+                                                            @input="syncGroupInbound(itemGroup)"
+                                                            :disabled="activeUserId === 'manager'"
+                                                            class="w-12 border border-blue-200 rounded text-center text-[13px] font-black focus:ring-2 focus:ring-blue-500 bg-white mr-1 h-6 shadow-sm disabled:opacity-50 disabled:bg-gray-100">
+                                                        <span class="text-[10px] text-gray-400 font-normal">/ {{
+                                                            itemGroup.totalPoQty }}</span>
+                                                    </div>
+                                                    <div v-if="itemGroup.inbound > itemGroup.totalPoQty"
+                                                        class="text-[8px] mt-0.5 text-indigo-400 font-bold uppercase tracking-tighter">
+                                                        OVER</div>
+                                                    <div v-if="devGuideMode && itemGroup.inbound > itemGroup.totalPoQty"
+                                                        class="dev-marker anim-pulse absolute right-0 top-0"></div>
+                                                </div>
+
+                                                <div class="text-center text-gray-400 font-medium text-[10px]">{{
+                                                    itemGroup.dueDate }}</div> <!-- 입고예정일 -->
+
+                                                <!-- Inbound Date (Level 2) -->
+                                                <div class="px-1"><input type="date" v-model="itemGroup.inboundDate"
+                                                        @change="syncGroupInbound(itemGroup)"
+                                                        :disabled="activeUserId === 'manager'"
+                                                        class="border border-gray-200 rounded-sm p-0.5 w-full text-[10px] text-center text-gray-500 bg-white shadow-inner disabled:opacity-50 disabled:bg-gray-100">
+                                                </div>
+
+                                                <!-- Removed Outbound Columns for PO View -->
+                                                <div class="text-center text-gray-400 font-mono">-</div>
+                                                <!-- 10: Due Date Placeholder -->
+
+                                                <!-- Unified Note (Level 2) -->
+                                                <div class="px-1 relative">
+                                                    <input type="text" v-model="itemGroup.note"
+                                                        @input="syncGroupNote(itemGroup)"
+                                                        placeholder="품목 공통/벤더 비고 (일괄 반영).."
+                                                        :disabled="activeUserId === 'manager'"
+                                                        class="w-full border border-indigo-100 rounded px-1.5 py-1 text-[11px] text-gray-700 bg-white/80 focus:ring-2 focus:ring-indigo-200 disabled:opacity-50 disabled:bg-gray-100">
+                                                    <div v-if="devGuideMode"
+                                                        @mouseenter.stop="showMemo($event, 'col_note')"
+                                                        @mouseleave.stop="hideMemo"
+                                                        class="dev-marker anim-pulse absolute -right-1 -top-2"></div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Project Allocations inside Item (Level 3) -->
+                                            <template v-if="isExpanded('item_in_po', itemGroup.id)">
+                                                <div v-for="(alloc, aIdx) in itemGroup.allocations"
+                                                    :key="alloc.projectName + '_' + itemGroup.id"
+                                                    class="grid gap-3 p-2 items-center text-[11px] border-b border-dashed border-gray-100 bg-white hover:bg-slate-50 transition-all"
+                                                    :style="{ 'grid-template-columns': viewMode === 'po' ? '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 110px 2.5fr' : '35px 2fr 1.5fr 1.5fr 1fr 90px 90px 110px 110px 100px 110px 110px 2.5fr' }">
+                                                    <div class="text-right pr-2 text-indigo-200">↳</div>
+                                                    <div class="pl-6 flex items-center truncate">
+                                                        <span
+                                                            class="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-sm text-[9px] font-black mr-2 uppercase border border-slate-200">Proj</span>
+                                                        <span class="text-slate-700 font-medium truncate">{{
+                                                            alloc.projectName }}</span>
+                                                    </div>
+                                                    <div class="text-center text-gray-300">-</div>
+                                                    <div class="text-center text-gray-300">-</div>
+                                                    <div class="text-center text-gray-300">-</div>
+
+                                                    <!-- Allocation Quantity -->
+                                                    <div class="px-1"><input type="number"
+                                                            v-model.number="alloc.item.poQty"
+                                                            @input="recalcGroupTotals(po)"
+                                                            :disabled="activeUserId === 'manager'"
+                                                            class="w-full border border-slate-100 rounded p-0.5 text-center font-bold text-slate-500 bg-slate-50/50 focus:ring-1 focus:ring-indigo-300 disabled:opacity-50 disabled:bg-gray-100">
+                                                    </div>
+
+                                                    <!-- Inbound Progress (Read-only at Level 3) -->
+                                                    <div class="text-center opacity-60">
+                                                        <span class="font-bold text-gray-400">{{ alloc.item.inbound
+                                                            }}</span>
+                                                        <span class="text-[9px] text-gray-300">/ {{ alloc.item.poQty
+                                                            }}</span>
+                                                    </div>
+
+                                                    <div class="text-center text-gray-300">-</div>
+                                                    <div class="text-center text-gray-300">-</div>
+
+
+                                                    <!-- Due Date (Level 3 Override) -->
+                                                    <div class="relative px-1"
+                                                        @mouseenter="showMemo($event, 'item_due_date_override')"
+                                                        @mouseleave="hideMemo">
+                                                        <input type="date" v-model="alloc.item.dueDate"
+                                                            @change="syncItemDueDate(alloc.item)"
+                                                            :disabled="isItemLocked(alloc.item)"
+                                                            class="border rounded p-0.5 w-full text-[10px] text-center font-bold transition-all focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                                                            :class="alloc.item.dueDate !== alloc.item.originalPoDueDate ? 'text-indigo-600 bg-indigo-50 border-indigo-300' : (isItemLocked(alloc.item) ? 'text-gray-400 border-transparent bg-transparent' : 'text-blue-700 border-transparent bg-transparent hover:border-gray-200')">
+                                                        <div v-if="devGuideMode"
+                                                            class="dev-marker anim-pulse absolute -right-1 -top-1">
+                                                        </div>
+                                                        <div v-if="alloc.item.dueDate !== alloc.item.originalPoDueDate"
+                                                            class="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[8px] px-1.5 rounded-sm font-black shadow-md z-20 flex items-center">
+                                                            CHANGED
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Individual Note (Level 3 - Read Only in PO View) -->
+                                                    <div class="px-1 text-[10px] text-gray-400 italic truncate"
+                                                        title="상세 수정은 프로젝트 탭에서 수행">
+                                                        {{ alloc.item.note || '-' }}
+                                                    </div>
+                                            </template>
+                                        </template>
+                                    </template>
+                                </template>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Auto-save Toast -->
+                    <transition enter-active-class="transition ease-out duration-300 transform"
+                        enter-from-class="translate-y-2 opacity-0" enter-to-class="translate-y-0 opacity-100"
+                        leave-active-class="transition ease-in duration-200 transform"
+                        leave-from-class="translate-y-0 opacity-100" leave-to-class="translate-y-2 opacity-0">
+                        <div v-if="showSaveToast"
+                            class="fixed bottom-6 right-6 bg-gray-800 text-white px-4 py-3 rounded-lg shadow-lg text-sm flex items-center z-50 pointer-events-none">
+                            <svg class="w-5 h-5 mr-3 text-green-400" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M5 13l4 4L19 7">
+                                </path>
+                            </svg>
+                            <div class="flex flex-col">
+                                <span class="font-bold">입력 내용이 자동 저장되었습니다</span>
+                            </div>
+                        </div>
+                    </transition>
+                </div>
+            </div>
+
+            <!-- Vue App Logic -->
+            <script>
+                const { createApp } = Vue;
+
+                createApp({
+                    data() {
+                        return {
+                            activeUserId: 'kim',
+                            managerViewTarget: 'kim',
+                            devGuideMode: false,
+                            isSidebarOpen: true,
+                            viewMode: 'po',
+                            searchQuery: '',
+                            filterVendor: '',
+                            filterStatus: 'all',
+                            filterItemSearch: '',
+                            memoVisible: false,
+                            memoPos: { x: 0, y: 0 },
+                            activeMemoKey: null,
+                            showSaveToast: false,
+                            saveTimeout: null,
+                            memoDictionary: {
+                                page_description: '🎯 기획 의도: 구매담당자의 입출고 현황을 제어하기 위한 입출고관리 페이지 입니다. 프로젝트별로 입출고 현황을 파악하고, 발주서별로 즉각적인 입출고 액션을 취할 수 있도록 단일 페이지 워크스페이스 형태로 기획되었습니다.\n\n🔄 View-Specific Strategy:\n1. 프로젝트로 보기: [입고+출고 통합] 전체 수급 목표 대비 현재 확보량(입고) 및 현장 배송량(출고)을 모두 모니터링합니다.\n2. 발주서로 보기: [입고 집중] 특정 벤더의 납품 이행 여부만을 관리하기 위해 출고 관련 컬럼 및 지표를 숨겨 데이터 노이즈를 최소화합니다.\n\n🔄 Interaction Flow: 좌측 사이드바를 통해 특정 프로젝트나 발주서를 선택, 중앙 그리드에서 데이터를 입력 및 수정합니다. 입력 시 별도의 저장 버튼 없이 서버와 동기화되며, 처리 결과는 우측 하단 토스트 메시지로 피드백됩니다.\n\n✅ Validation: 출고량(Outbound) 입력 시(프로젝트 뷰 전용), 해당 시점의 가용 재고(입고수량)를 초과할 수 없도록 검증이 선행됩니다.'
+                                ,
+                                search_filters: '🎯 기획 의도: 선택된 작업 컨텍스트(특정 프로젝트 또는 발주서) 내에서 대량의 품목 리스트를 효율적으로 관리하기 위한 로컬 데이터 필터링 시스템입니다. 사이드바 검색(Global Search)을 통해 작업 대상을 확정한 후, 실제 입출고 액션을 수행하기 전 2차적으로 대상을 좁히는 용도입니다. (혹은 구매담당자가 필요시 언제든 사용가능)\n\n🔄 Interaction Flow: \n1. Scope Control (Local): 사이드바에서 선택된 현재 프로젝트/발주서 내의 품목들만을 필터링 대상으로 삼습니다. (전체 검색은 사이드바의 글로벌 검색 필드 활용)\n2. 거래처 필터: 현재 작업 범위 내에서 특정 벤더의 품목만 고립시켜 확인합니다.\n3. 상태 필터: 입고 완료여부를 기준으로 "진행중(Active)" 또는 "완료(Completed)" 건을 구분하여 작업 우선순위를 결정합니다.\n4. 품목/발주 통합 검색: 품목명 또는 발주번호 키워드 매칭을 통해 특정 라인을 타겟팅합니다.\n\n✅ Validation: 필터링 조건은 "조회" 버튼 클릭 시 AND 연산으로 적용되며, "초기화" 버튼을 통해 현재 카드의 필터 상태를 즉시 초기화하고 원본 리스트를 복구할 수 있습니다.\n\n.\n\n🚧 Dev Notes/Caution: 사이드바의 글로벌 검색과 카드 영역의 로컬 필터가 독립적으로 작동하므로, 컨텍스트(프로젝트/발주서) 전환 시 카드 내 필터는 초기화됩니다.'
+                                ,
+                                metric_delayed: '🎯 기획 의도: 계약된 납기일(입고요청일)이 지났음에도 입고가 완료되지 않은 품목을 최우선으로 노출합니다.\n\n🔄 Interaction Flow: 대시보드 상단에 항상 노출되며, 숫자 클릭 시 그리드를 해당 지연 품목들로만 즉시 필터링하여 리스트업합니다.\n\n✅ Validation: 시스템 기준일 대비 입고 완료 처리가 되지 않은 건수를 집계합니다.\n\n🚧 Notes/Caution:  서버 시간 기준으로 00:00:00 비교 처리를 일관되게 적용해야 합니다.'
+                                ,
+                                metric_today: '🎯 기획 의도: "Daily Operation" 관리. 오늘 입고 예정인 물량을 미리 파악하기 위한 지표입니다.\n\n🔄 Interaction Flow: 오늘 날짜와 일치하는 약속된 입고일을 가진 품목 수를 실시간으로 집계하여 표시합니다.\n\n✅ Validation: po_lines의 입고 예정일(pol_in_expected_dt) 또는 납기일과 시스템 상의 오늘 날짜를 비교합니다.'
+                                ,
+                                metric_week: '🎯 기획 의도: "Weekly Horizon" 확보. 이번 주 내로 예정된 출고(현장 발송) 물량을 파악하여 물류 차량 배차 및 현장 하차 인력과의 협의를 지원합니다.\n\n🔄 Interaction Flow: 현재 주차 기준 월요일부터 일요일까지의 모든 출고 예정 건수를 집계합니다.\n\n🚧 Notes/Caution: 구매담당자들은 주말(공휴일) 납기건은 평일중에 완료한다고 합니다. 그래서 월-일까지를 기준으로 했습니다.'
+                                ,
+                                metric_proj_inbound: '🎯 기획 의도: 선택된 프로젝트의 "조달 완성도"를 측정합니다. 필요한 전체 물자 중 창고(또는 사내 통제권)에 들어온 물량의 비율을 보여줍니다.\n\n🔄 Interaction Flow: 프로젝트 선택 시 실시간으로 계산되어 상단 카드로 노출됩니다.\n\n✅ Validation: (해당 프로젝트 할당 수량 중 입고 완료 수량 / 전체 할당 수량) * 100.'
+                                ,
+                                metric_proj_outbound: '🎯 기획 의도: 선택된 프로젝트의 “납품률”을 측정합니다. 확보된 물자가 실제  현장으로 얼마나 이동되었는지를 보여주는 진척 지표입니다.\n\n🔄 Interaction Flow: 출고량 입력 시 즉각적으로 게이지가 반영됩니다.\n\n✅ Validation: (현장 인도 완료 수량 / 전체 할당 수량) * 100.\n\n🚧 Notes/Caution: 이번 범위에서는 현장 도착완료는 감안하지않고, “출고일자” 를 기준으로 합니다.'
+                                ,
+                                metric_po_inbound: '🎯 기획 의도: 특정 발주서(PO) 단위의 입고율을 측정합니다. 벤더가 약속한 물량을 제대로 보냈는지 평가하기 위한 기초 지표입니다.\n\n🔄 Interaction Flow: 발주서 뷰 선택 시 해당 PO에 포함된 전체 라인 아이템의 입고 비율을 보여줍니다.\n\n✅ Validation: po_lines의 발주 수량(pol_qty) 합계 대비 실제 입고 처리된 수량(pol_in_qty) 합계를 비교합니다.'
+                                ,
+                                over_delivery_policy: '🎯 기획 의도: MOQ(최소 주문 수량) 또는 공급사 사정으로 인해 발주 수량을 초과하여 입고된 물량(Over-delivery)에 대한 UI 처리 입니다.\n\n🔄 Interaction Flow: \n1. Visual Signal: 입고율이 100%를 초과하면 자동으로 인디고 색상 테마와 "OVER" 배지가 활성화됩니다.\n2. Documentation: 초과 수량에 대한 구체적인 사유는 해당 라인의 "비고"란에 필수 기재하여 추후 정산 시 근거로 활용합니다.\n\n✅ Validation: 텍스트 수치(%)는 실제 과입고분을 반영(예: 105%)하되, 시각적인 프로그레스 바는 레이아웃 보호를 위해 100%에서 캡핑(Capping) 처리합니다.\n\n📊 Backend Mapping: erp_logistics_schema에서 과입고분은 별도의 Surplus Flag와 함께 저장되며, 구매팀 승인 프로세스를 거쳐 정산 시스템(Finance)으로 전송됩니다. (추후 반영, 이번 범위 아님)\n\n🚧 Notes/Caution: `item.inbound > item.poQty` 조건문으로 스타일을 제어하며, 인디고 테마 적용 시 가독성을 위해 배경색(`bg-indigo-50`)과 테두리(`border-indigo-100`)를 세트로 적용해야 합니다.'
+                                ,
+                                metric_po_outbound: '🎯 기획 의도: 특정 발주서(PO) 단위의 출고율을 측정합니다.\n\n⚠️ UI Policy: [발주서로 보기] 모드에서는 벤더 관리의 집중도를 높이기 위해 해당 지표와 카드가 화면에서 숨겨집니다. 프로젝트 뷰에서만 확인 가능합니다.'
+                                ,
+                                view_project: '🎯 기획 의도: “프로젝트” 중심의 뷰입니다. 구매 담당자가 자기가 맡은 프로젝트의 총 조달 목표 대비 현재 얼마나 물건이 확보되었고, 현장으로 보내졌는지를 확인하기 위한 뷰입니다.\n\n🔄 Interaction Flow: 사이드바에서 프로젝트 선택 시 해당 프로젝트에 할당된(po_allocations) 모든 품목이 나열됩니다.\n\n✅ Validation: 프로젝트 뷰에서는 "내 물량" 필드가 기준이 되며, 전체 발주서 수량이 아닌 해당 프로젝트에 배정된 수량 범위 내에서만 출고 제어가 가능합니다.'
+                                ,
+                                view_po: '🎯 기획 의도: 발주서 중심의 뷰입니다. 특정 벤더로부터 물건이 도착했거나, 발주서(PO)를 기준으로 검수하고 입고 처리할 때 사용합니다. "벤더가 약속을 지켰는가"에 집중하기 위해 현장으로의 출고(Outbound) 정보는 의도적으로 배제되었습니다.\n\n🔄 Interaction Flow: 사이드바에서 발주서 번호 선택 시, 해당 발주서에 포함된 모든 품목이 프로젝트별로 그룹핑되어 표시됩니다. \n\n✅ Validation: 발주서 뷰에서는 전체 입고 수량을 먼저 확정한 뒤, 이를 각 프로젝트(Allocation)로 배분하는 흐름을 가집니다.'
+                                ,
+                                project_expand: '🎯 기획 의도: 데이터 계층 구조 관리. 프로젝트와 발주서가 얽힌 복잡한 구조를 효율적으로 탐색하기 위한 트리 그리드 컨트롤러입니다.\n\n🔄 Interaction Flow:\n1. 프로젝트로 보기: 1단계(Project) - 2단계(Item/PO) - 3단계(Detail) 순으로 확장됩니다.\n2. 발주서로 보기: [신규] 1단계(PO) - 2단계(Item Master) - 3단계(Project Allocations) 순으로 확장됩니다.'
+                                ,
+                                col_vendor: '🎯 기획 의도: 커뮤니케이션 대상 식별. 물건의 지연이나 품질 이슈 발생 시 즉각적으로 연락해야 할 공급 주체를 확인하기 위한 컬럼입니다.'
+                                ,
+                                col_model: '🎯 기획 의도: 품목의 기술적 식별자 관리. 품목명만으로는 구분이 어려운 정밀 부품의 사양(모델명, 외경, 재질 등)을 명기하여 오발송 및 오입고를 방지합니다.\n\n🔄 Interaction Flow: 발주 정보 등록 시 고정되는 정보이며, 그리드 상에서는 툴팁 등을 통해 상세 스펙을 빠르게 확인할 수 있는 인터페이스를 제공합니다.\n\n🚧 Notes/Caution: 텍스트 길이가 길어질 경우 텍스트 생략(Truncation) 처리 및 호버 시 풀텍스트 노출.'
+                                ,
+                                col_delivery_cond: '🎯 기획 의도: 납품조건 확인. 물건을 우리가 찾으러 가야 하는지(Ex-works), 업체가 갖다 주는지등을 확인 할 수 있습니다.\n\n🔄 Interaction Flow: (이 내용은 이번 범위는 아님) 추후에는 기입된 조건에 따라 물류팀의 작업(logistics_jobs) 생성 필요 여부가 시스템에서 자동 추천됩니다.'
+                                ,
+                                col_inbound_qty: '🎯 기획 의도: 발주서 수량 중 특정 프로젝트에 배정된 물량을 의미합니다.\n\n🔄 Interaction Flow:\n1. 프로젝트로 보기: Level 1 프로젝트 라인에서 상징적으로 합산 표시되며, 품목 레벨에서 확인 가능합니다.\n2. 발주서로 보기: [신규 하이라키] Level 3(프로젝트 배정행)에서 각 프로젝트별 배분 수량을 조정할 수 있습니다.\n\n✅ Validation: 모든 프로젝트 배정 수량의 합은 PO 품목의 전체 수량을 초과할 수 없습니다.'
+                                ,
+                                col_inbound_total: '🎯 기획 의도: 해당 품목의 창고 입고 진척도를 시각화합니다.\n\n🔄 Interaction Flow:\n1. 발주서로 보기: [신규 구조] Level 2(품목 헤더행)에서 실제 입고 수량을 한 번에 입력합니다. "입물량 = POL 입고"라는 물류 원칙을 준수합니다.\n2. 프로젝트로 보기: 전체 발주 대비 해당 프로젝트의 진척 상태를 보여주는 인디케이터로 작동합니다.\n\n🚧 Notes/Caution: 품목 레벨(Level 2)에서 입고 수량을 변경하면, 해당 품목을 공유하는 모든 프로젝트의 배정분에 데이터가 실시간으로 전파(Sync)됩니다.'
+                                ,
+                                col_inbound_req_date: '🎯 기획 의도: 발주서상의 “납기요청일”. 발주 시점에 구매담당자가 거래처에 납기를 요청한 날짜입니다.\n\n🔄 Interaction Flow: 발주 단계에서 fix 된 날짜이며, 변경이 불가능한 기준점으로 작동합니다.'
+                                ,
+                                col_inbound_date: '🎯 기획 의도: 실물 인도 시점의 기록. 정산 시점의 기준이 되거나, 납기 준수 여부(KPI)를 판단하는 기초 데이터가 됩니다.\n\n🔄 Interaction Flow: 입고가 진행되면 담당자가 확인 후 수기로 입력합니다.\n\n✅ Validation: 미래 날짜는 기록할 수 없으며, 발주일보다 앞설 수 없습니다.'
+                                ,
+                                col_outbound_qty: '🎯 기획 의도: 구매 담당자가 확보된 재고를 프로젝트 현장으로 보낸 "실행 수량"입니다.\n\n⚠️ UI Policy: [프로젝트로 보기] 모드에서만 노출됩니다. 발주서 뷰에서는 숨겨집니다.\n\n🔄 Interaction Flow: 인라인 에디팅을 통해 숫자를 입력하며, 입력 즉시 가용 재고에서 차감 처리가 됩니다.\n\n✅ Validation: [입고수량 - 기출고수량] 범위 내에서만 입력이 가능합니다.'
+                                ,
+                                col_outbound_date: '🎯 기획 의도: 구매 담당자가 확보된 재고를 프로젝트 현장으로 보낸 "실행 날짜입니다.\n\n🔄 Interaction Flow: 날짜 피커를 통해 선택합니다.\n\n✅ Validation: 입고일보다 빠른 날짜에 출고될 수 없습니다.'
+                                ,
+                                col_due_date: '🎯 기획 의도: 프로젝트 단위로 "프로젝트 정보의 납기일"을 보여줍니다.\n\n🔄 Interaction Flow (View-Specific Hierarchy):\n 발주서로 보기: [신규 구조] Level 3(최하단 프로젝트 행)에서 개별 오버라이드를 수행합니다.'
+                                ,
+                                item_due_date_override: '🎯 기획 의도: 프로젝트 공통 일정과 무관하게 특정 품목에 대해서만 합의된 개별 납기를 기록합니다.\n\n🔄 Interaction Flow: 이 필드에서의 변경은 해당 품목에만 국한되며 상위로 전파되지 않습니다. 다만, 상위 프로젝트 라인의 날짜가 다시 변경될 경우 폭포수 로직에 의해 덮어씌워질 수 있습니다.',
+
+                                col_note: '🎯 기획 의도: 비즈니스 맥락 및 실물 현황 공유. 부분 입고 사유나 벤더 이슈를 기록합니다.\n\n🔄 Interaction Flow (Role-based separation):\n1. 발주서로 보기 (PO View): Level 2(품목 헤더)에서 입력 시 모든 프로젝트 할당분에 "일괄 동기화(Batch Sync)"됩니다. 벤더 대면용 통합 상태 관리에 최적화되어 있습니다. 하위 레벨은 확인용으로만 노출됩니다.\n2. 프로젝트로 보기 (Project View): 각 프로젝트 현장별 특이사항을 개별 저장합니다. 개별 프로젝트 관점의 밀착 관리가 가능합니다.\n\n✅ 효율성 포인트: 한 품목이 여러 프로젝트에 쪼개져 있어도, PO 탭에서 한 번만 적으면 모든 곳에 반영되므로 중복 입력을 방지합니다.',
+                            }, expandedStates: {}, // Persistent state for expanding/collapsing sections
+                            selectedProjectId: null,
+                            selectedPoNumber: null,
+                            projects: [
+                                {
+                                    id: 1,
+                                    code: 'G102500417',
+                                    name: '테스트 프로젝트 1',
+                                    expanded: true,
+                                    pos: [
+                                        {
+                                            id: 101,
+                                            poNumber: 'NB__O_4029',
+                                            vendorName: '현대배관pvc',
+                                            condition: '직배송',
+                                            dueDate: '2026-04-18',
+                                            expanded: true,
+                                            items: [
+                                                { id: 1001, name: 'DIFF.PRESSURE TRANSMITTER FOR LT', poQty: 10, inbound: 10, inboundDate: '2026-03-19', outbound: 10, outboundDate: '2026-03-21', note: '', dueDate: '2026-04-18', ownerId: 'kim', isEdited: false },
+                                                { id: 1002, name: 'RADAR LEVEL TRANSMITTER', poQty: 20, inbound: 20, inboundDate: '2026-03-19', outbound: 15, outboundDate: '2026-03-21', note: '', dueDate: '2026-04-18', ownerId: 'lee', isEdited: false },
+                                                { id: 1003, name: 'Differential Pressure Switch', poQty: 5, inbound: 5, inboundDate: '2026-03-19', outbound: 0, outboundDate: '', note: '', dueDate: '2026-04-18', ownerId: 'kim', isEdited: false },
+                                                { id: 1101, name: 'Butterfly Valve 150A', poQty: 15, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '', dueDate: '2026-04-18', ownerId: 'kim', isEdited: false },
+                                                { id: 1102, name: 'Globe Valve 100A', poQty: 8, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '', dueDate: '2026-04-18', ownerId: 'lee', isEdited: false },
+                                                { id: 1103, name: 'Pressure Gauge (0-10bar)', poQty: 25, inbound: 5, inboundDate: '2026-03-19', outbound: 0, outboundDate: '', note: '부분 입고', dueDate: '2026-04-18', ownerId: 'kim', isEdited: false }
+                                            ]
+                                        },
+                                        {
+                                            id: 102,
+                                            poNumber: 'NB__O_4030',
+                                            vendorName: '제성진흥',
+                                            condition: '공장픽업',
+                                            dueDate: '2026-03-10',
+                                            expanded: true,
+                                            items: [
+                                                { id: 1004, name: 'DIFF.PRESSURE TRANSMITTER FOR LT', poQty: 5, inbound: 5, inboundDate: '', outbound: 0, outboundDate: '', note: '', dueDate: '2026-03-10', ownerId: 'kim', isEdited: false },
+                                                { id: 1005, name: 'RADAR LEVEL TRANSMITTER', poQty: 5, inbound: 5, inboundDate: '', outbound: 0, outboundDate: '', note: '', dueDate: '2026-03-10', ownerId: 'lee', isEdited: false },
+                                                { id: 1006, name: 'Differential Pressure Switch', poQty: 8, inbound: 8, inboundDate: '2026-03-19', outbound: 8, outboundDate: '2026-03-24', note: '', dueDate: '2026-03-10', ownerId: 'kim', isEdited: false },
+                                                { id: 1104, name: 'Temperature Sensor Type-K', poQty: 30, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '', dueDate: '2026-03-10', ownerId: 'lee', isEdited: false },
+                                                { id: 1105, name: 'Level Switch (Tuning Fork)', poQty: 12, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '납기 지연 우려', dueDate: '2026-03-10', ownerId: 'kim', isEdited: false }
+                                            ]
+                                        },
+                                        {
+                                            id: 105,
+                                            poNumber: 'NB__O_4055',
+                                            vendorName: '신흥기공',
+                                            condition: '현장도착도',
+                                            dueDate: '2026-03-19',
+                                            expanded: true,
+                                            items: [
+                                                { id: 1106, name: 'Centrifugal Pump 5HP', poQty: 2, inbound: 2, inboundDate: '2026-03-19', outbound: 0, outboundDate: '', note: '', dueDate: '2026-03-19', ownerId: 'lee', isEdited: false },
+                                                { id: 1107, name: 'Mechanical Seal Kit', poQty: 4, inbound: 4, inboundDate: '2026-03-19', outbound: 4, outboundDate: '2026-03-19', note: '긴급 출고', dueDate: '2026-03-19', ownerId: 'kim', isEdited: false }
+                                            ]
+                                        },
+                                        {
+                                            id: 106,
+                                            poNumber: 'NB__O_4066',
+                                            vendorName: '삼성E&A 물류지원팀',
+                                            condition: '직배송',
+                                            dueDate: '2026-04-20',
+                                            expanded: true,
+                                            items: [
+                                                { id: 1108, name: '자재 1-A', modelSpec: 'MODEL-1A', poQty: 10, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '', dueDate: '2026-04-20', ownerId: 'kim', isEdited: false },
+                                                { id: 1109, name: '자재 1-B (납기변경)', modelSpec: 'MODEL-1B', poQty: 40, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '공고처 요청으로 인한 부분 조기납품(4/10)', dueDate: '2026-04-10', ownerId: 'lee', isEdited: true },
+                                                { id: 1110, name: '자재 1-C (과입고)', modelSpec: '6232ZZ / 윤활유포함', poQty: 100, inbound: 105, inboundDate: '2026-03-15', outbound: 0, outboundDate: '', note: 'MOQ로 인한 5개 과입고 발생', dueDate: '2026-04-20', ownerId: 'lee', isEdited: false }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    id: 2,
+                                    code: 'P202500890',
+                                    name: '하수처리장 C동 증설 관급자재',
+                                    expanded: true,
+                                    pos: [
+                                        {
+                                            id: 103,
+                                            poNumber: 'NB__O_4088',
+                                            vendorName: '대한철강(주)',
+                                            condition: '현장도착도',
+                                            dueDate: '2026-04-05',
+                                            expanded: true,
+                                            items: [
+                                                { id: 1007, name: '자재 2-A', modelSpec: 'SPEC-2A', poQty: 50, inbound: 20, inboundDate: '2026-03-18', outbound: 20, outboundDate: '2026-03-18', note: '1차 부분납품 분', dueDate: '2026-04-05', ownerId: 'lee', isEdited: false },
+                                                { id: 1008, name: '자재 2-B', modelSpec: 'SPEC-2B', poQty: 30, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '2차 납품 대기', dueDate: '2026-04-05', ownerId: 'kim', isEdited: false }
+                                            ]
+                                        },
+                                        {
+                                            id: 110,
+                                            poNumber: 'NB__O_4102',
+                                            vendorName: '현대제철',
+                                            condition: '공장도착도',
+                                            dueDate: '2026-04-12',
+                                            expanded: true,
+                                            items: [
+                                                { id: 1020, name: '자재 2-C', modelSpec: 'H-BEAM 300x300', poQty: 120, inbound: 0, inboundDate: '', outbound: 0, outboundDate: '', note: '물량 확인 필요', dueDate: '2026-04-12', ownerId: 'kim', isEdited: false }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    id: 3,
+                                    code: 'M302500112',
+                                    name: '여과기 및 수중펌프 교체공사',
+                                    expanded: true,
+                                    pos: []
+                                },
+                                {
+                                    id: 4,
+                                    code: 'E402500999',
+                                    name: '수배전반 설비 공사 자재',
+                                    expanded: true,
+                                    pos: []
+                                },
+                                {
+                                    id: 5,
+                                    code: 'G102500420',
+                                    name: '[긴급] 배관 자재 수급 건',
+                                    expanded: true,
+                                    pos: []
+                                }
+                            ]
+                        }
+                    },
+                    mounted() {
+                        // 1. Initial State Setup
+                        if (this.projects.length > 0) {
+                            this.selectedProjectId = this.projects[0].id;
+                        }
+
+                        // 2. Mock Data Initialization (Split Item Scenario) -> Use PO NB__O_4066
+                        const splitItemName = '공통자재 (분할배정)';
+                        const poNumber = 'NB__O_4066';
+                        const projectsToSplit = [1, 2, 3];
+                        const qtys = [20, 30, 50];
+
+                        projectsToSplit.forEach((pid, idx) => {
+                            const proj = this.projects.find(p => p.id === pid);
+                            if (proj) {
+                                let existingPo = proj.pos.find(po => po.poNumber === poNumber);
+                                if (!existingPo) {
+                                    existingPo = {
+                                        id: 5500 + pid,
+                                        poNumber: poNumber,
+                                        vendorName: '삼성E&A 물류지원팀', // Consistent vendor
+                                        condition: '현장도착도',
+                                        dueDate: '2026-04-20',
+                                        expanded: true,
+                                        items: []
+                                    };
+                                    proj.pos.push(existingPo);
+                                }
+                                existingPo.items.push({
+                                    id: 5000 + pid,
+                                    name: splitItemName,
+                                    poQty: qtys[idx],
+                                    inbound: 0,
+                                    inboundDate: '',
+                                    outbound: 0,
+                                    outboundDate: '',
+                                    note: '',
+                                    dueDate: '2026-04-20',
+                                    ownerId: pid === 2 ? 'lee' : 'kim',
+                                    isEdited: false
+                                });
+                            }
+                        });
+
+                        // 3. Initialize Original Dates for Change Detection
+                        this.projects.forEach(proj => {
+                            proj.pos.forEach(po => {
+                                po.originalDueDate = po.dueDate;
+                                po.isDateModified = false;
+                                if (po.items) {
+                                    po.items.forEach(item => {
+                                        item.originalPoDueDate = po.dueDate;
+                                    });
+                                }
+                            });
+                        });
+
+                        // 4. Final Selects
+                        if (this.aggregatedPos && this.aggregatedPos.length > 0) {
+                            this.selectedPoNumber = this.aggregatedPos[0].poNumber;
+                        }
+                    },
+                    computed: {
+                        effectiveUserId() {
+                            return this.activeUserId === 'manager' ? this.managerViewTarget : this.activeUserId;
+                        },
+                        allSubItems() {
+                            let items = [];
+                            this.projects.forEach(p => {
+                                p.pos.forEach(po => {
+                                    po.items.forEach(item => {
+                                        items.push({ ...item, poDueDate: po.dueDate });
+                                    });
+                                });
+                            });
+                            return items;
+                        },
+                        delayedItemsCount() {
+                            const sysDate = '2026-03-19';
+                            return this.allSubItems.filter(item =>
+                                item.ownerId === this.effectiveUserId &&
+                                item.dueDate < sysDate &&
+                                (item.inbound || 0) < item.poQty
+                            ).length;
+                        },
+                        todayExpectedCount() {
+                            const sysDate = '2026-03-19';
+                            return this.allSubItems.filter(item =>
+                                item.ownerId === this.effectiveUserId &&
+                                item.dueDate === sysDate &&
+                                (item.inbound || 0) < item.poQty
+                            ).length;
+                        },
+                        weekOutboundCount() {
+                            return this.allSubItems.filter(item => {
+                                if (item.ownerId !== this.effectiveUserId) return false;
+                                // Priority: item-level dueDate
+                                const targetDateStr = item.dueDate || item.poDueDate;
+                                return targetDateStr >= '2026-03-16' && targetDateStr <= '2026-03-20';
+                            }).length;
+                        },
+                        filteredProjects() {
+                            const query = this.searchQuery.trim().toLowerCase();
+                            // Filter projects that have at least one item belonging to the current user
+                            let userProjects = this.projects.filter(p => {
+                                return p.pos.some(po => po.items.some(item => item.ownerId === this.effectiveUserId));
+                            });
+
+                            if (!query) return userProjects;
+                            return userProjects.filter(p =>
+                                p.name.toLowerCase().includes(query) ||
+                                p.code.toLowerCase().includes(query)
+                            );
+                        },
+                        activeProject() {
+                            if (!this.selectedProjectId) return null;
+                            return this.projects.find(p => p.id === this.selectedProjectId);
+                        },
+                        activePo() {
+                            if (!this.selectedPoNumber) return null;
+                            return this.aggregatedPos.find(po => po.poNumber === this.selectedPoNumber);
+                        },
+                        todayInboundCount() {
+                            const todayDateStr = "2026-03-19";
+                            let count = 0;
+                            this.projects.forEach(project => {
+                                project.pos.forEach(po => {
+                                    po.items.forEach(item => {
+                                        if (item.ownerId === this.effectiveUserId && item.inboundDate === todayDateStr) count++;
+                                    });
+                                });
+                            });
+                            return count;
+                        },
+                        activeUser() {
+                            if (this.activeUserId === 'manager') {
+                                return { name: '팀장 (열람)', role: '중간관리자' };
+                            }
+                            return this.activeUserId === 'kim'
+                                ? { name: '김철수', role: '구매오너' }
+                                : { name: '이영희', role: '연관담당자(셋방)' };
+                        },
+                        thisWeekOutboundCount() {
+                            return this.allSubItems.filter(item => {
+                                if (item.ownerId !== this.effectiveUserId) return false;
+                                const targetDateStr = item.dueDate;
+                                return targetDateStr >= '2026-03-16' && targetDateStr <= '2026-03-20';
+                            }).length;
+                        },
+                        uniqueVendors() {
+                            const vendors = new Set();
+                            this.projects.forEach(p => p.pos.forEach(po => {
+                                if (po.vendorName) vendors.add(po.vendorName);
+                            }));
+                            return Array.from(vendors).sort();
+                        },
+                        displayProjects() {
+
+                            // 1. Initial source: filter by active project unless searching across vendors
+                            let source = this.activeProject ? [this.activeProject] : (this.filterVendor ? this.projects : []);
+
+                            return source.map(project => {
+                                let matchingPos = project.pos.filter(po => {
+                                    // 2. Filter POs by Vendor keyword
+                                    if (this.filterVendor && !po.vendorName.toLowerCase().includes(this.filterVendor.toLowerCase())) return false;
+                                    return true;
+                                }).map(po => {
+                                    // 3. Filter Items inside POs
+                                    let matchingItems = po.items.filter(item => {
+                                        // RELENTLESS OWNER FILTER
+                                        if (item.ownerId !== this.effectiveUserId) return false;
+
+                                        // Status Filter
+                                        if (this.filterStatus === 'active' && item.inbound >= item.poQty) return false;
+                                        if (this.filterStatus === 'completed' && item.inbound < item.poQty) return false;
+                                        // Item Search Query
+                                        if (this.filterItemSearch.trim()) {
+                                            const sQuery = this.filterItemSearch.trim().toLowerCase();
+                                            if (!item.name.toLowerCase().includes(sQuery)) return false;
+                                        }
+
+                                        return true;
+                                    });
+
+                                    return { ...po, items: matchingItems };
+                                }).filter(po => po.items.length > 0);
+
+                                return { ...project, pos: matchingPos };
+                            }).filter(p => p.pos.length > 0);
+                        },
+                        aggregatedPos() {
+                            let poMap = new Map();
+                            this.projects.forEach(proj => {
+                                proj.pos.forEach(po => {
+                                    if (!poMap.has(po.poNumber)) {
+                                        poMap.set(po.poNumber, {
+                                            poNumber: po.poNumber,
+                                            vendorName: po.vendorName,
+                                            condition: po.condition,
+                                            dueDate: po.dueDate,
+                                            items: [],
+                                            expanded: true,
+                                            totalPoQty: 0,
+                                            totalInbound: 0,
+                                            totalOutbound: 0
+                                        });
+                                    }
+                                    let mergedPo = poMap.get(po.poNumber);
+                                    po.items.forEach(item => {
+                                        // Grouping by item name within the same PO
+                                        let existingGroup = mergedPo.items.find(g => g.name === item.name);
+                                        if (!existingGroup) {
+                                            existingGroup = {
+                                                isGroup: true,
+                                                isSplit: false,
+                                                name: item.name,
+                                                totalPoQty: 0,
+                                                // Take common fields from the first item
+                                                inbound: item.inbound,
+                                                inboundDate: item.inboundDate,
+                                                dueDate: item.dueDate,
+                                                note: item.note,
+                                                allocations: [],
+                                                expanded: true
+                                            };
+                                            mergedPo.items.push(existingGroup);
+                                        }
+
+                                        existingGroup.allocations.push({
+                                            item: item,
+                                            projectName: proj.name,
+                                            projectCode: proj.code
+                                        });
+                                        existingGroup.totalPoQty += Number(item.poQty || 0);
+                                        if (existingGroup.allocations.length > 1) {
+                                            existingGroup.isSplit = true;
+                                        }
+
+                                        mergedPo.totalPoQty += Number(item.poQty || 0);
+                                        mergedPo.totalInbound += Number(item.inbound || 0);
+                                        mergedPo.totalOutbound += Number(item.outbound || 0);
+                                    });
+                                });
+                            });
+                            return Array.from(poMap.values());
+                        },
+                        filteredPos() {
+                            const query = this.searchQuery.trim().toLowerCase();
+                            if (!query) return this.aggregatedPos;
+                            return this.aggregatedPos.filter(p =>
+                                p.poNumber.toLowerCase().includes(query) ||
+                                (p.vendorName && p.vendorName.toLowerCase().includes(query))
+                            );
+                        },
+                        displayPos() {
+
+                            let source = this.activePo ? [this.activePo] : (this.filterVendor ? this.aggregatedPos : []);
+
+                            return source.filter(po => {
+                                // Vendor Filter Search
+                                if (this.filterVendor && !po.vendorName.toLowerCase().includes(this.filterVendor.toLowerCase())) return false;
+                                return true;
+                            }).map(po => {
+                                // Filter items based on status and search query
+                                const filteredItems = po.items.filter(itemGroup => {
+                                    // Status Filter
+                                    if (this.filterStatus === 'active' && itemGroup.inbound >= itemGroup.totalPoQty) return false;
+                                    if (this.filterStatus === 'completed' && itemGroup.inbound < itemGroup.totalPoQty) return false;
+
+                                    // Item Search Filter
+                                    if (this.filterItemSearch.trim()) {
+                                        const sQuery = this.filterItemSearch.trim().toLowerCase();
+                                        if (!itemGroup.name.toLowerCase().includes(sQuery)) return false;
+                                    }
+                                    return true;
+                                }).map(itemGroup => {
+                                    const totalPoQty = itemGroup.allocations.reduce((sum, a) => sum + (a.item.poQty || 0), 0);
+                                    return {
+                                        ...itemGroup,
+                                        totalPoQty,
+                                        id: 'item_' + itemGroup.name + '_' + po.poNumber
+                                    };
+                                });
+
+                                return { ...po, filteredItems };
+                            }).filter(po => po.filteredItems.length > 0);
+                        }
+                    },
+                    methods: {
+                        resetFilters() {
+                            this.filterVendor = '';
+                            this.filterStatus = 'all';
+                            this.filterItemSearch = '';
+                            this.triggerSearch();
+                        },
+                        syncGroupInbound(item) {
+                            if (item.allocations) {
+                                item.allocations.forEach(alloc => {
+                                    alloc.item.inbound = item.inbound;
+                                    alloc.item.inboundDate = item.inboundDate;
+                                    alloc.item.isEdited = true;
+                                });
+                            }
+                            this.autoSave();
+                        },
+                        syncGroupNote(item) {
+                            if (item.allocations) {
+                                item.allocations.forEach(alloc => {
+                                    alloc.item.note = item.note;
+                                    alloc.item.isEdited = true;
+                                });
+                            }
+                            this.autoSave();
+                        },
+                        syncPoDueDate(renderProj) {
+                            // Find the original project and update the dueDate for all items in that project's PO allocation
+                            const targetProj = this.projects.find(p => p.name === renderProj.sourceProjName);
+                            if (targetProj) {
+                                const targetPo = targetProj.pos.find(po => po.poNumber === renderProj.poNumber);
+                                if (targetPo) {
+                                    targetPo.dueDate = renderProj.dueDate;
+                                    targetPo.isDateModified = targetPo.dueDate !== targetPo.originalDueDate;
+                                    // Force items to take the project-specific PO dueDate (Batch Update)
+                                    targetPo.items.forEach(item => {
+                                        item.dueDate = renderProj.dueDate;
+                                        item.isEdited = true;
+                                    });
+                                }
+                            }
+                            this.autoSave();
+                        },
+                        syncItemDueDate(item) {
+                            // Update the specific item's dueDate in the source project data (Override point)
+                            if (item.originalItem) {
+                                item.originalItem.dueDate = item.dueDate;
+                                item.originalItem.isEdited = true;
+                            }
+                            this.autoSave();
+                        },
+                        calculateGroupOutbound(group) {
+                            if (!group || !group.allocations) return 0;
+                            return group.allocations.reduce((sum, alloc) => sum + (alloc.item.outbound || 0), 0);
+                        },
+                        validateAllocation(group, alloc) {
+                            const totalOutbound = this.calculateGroupOutbound(group);
+                            if (totalOutbound > group.inbound) {
+                                alert(`데이터 정합성 오류: 전체 출고량(${totalOutbound})이 입고량(${group.inbound})을 초과할 수 없습니다!`);
+                            }
+                            this.markEdited(alloc.item);
+                        },
+                        recalcGroupTotals(po) {
+                            // Recalculate PO level totals if sub-allocations change
+                            // Note: Master total is usually reactive, but this ensures consistency
+                            this.autoSave();
+                        },
+                        updateGroupKrw(group, field, event) {
+                            const rawValue = event.target.value.replace(/[^\d]/g, '');
+                            const val = rawValue ? parseInt(rawValue, 10) : 0;
+                            group[field] = val;
+                            group.allocations.forEach(alloc => {
+                                alloc.item[field] = val;
+                                alloc.item.isEdited = true;
+                            });
+                            this.autoSave();
+                        },
+                        downloadExcel() {
+                            if (typeof XLSX === 'undefined') {
+                                alert('엑셀 라이브러리를 불러오는 중입니다. 잠시 후 시도해주세요.');
+                                return;
+                            }
+                            const wb = XLSX.utils.book_new();
+                            const allData = [];
+                            const headers = ['프로젝트명', '발주서번호', '거래처명', '발주납품조건', '품목명', '발주량', '입고수량', '입고일자', '출고수량', '출고일자', '계약납기일', '비고'];
+                            allData.push(headers);
+
+                            const exportProjects = this.vendorSearchQuery.trim() ? this.displayProjects : this.projects;
+
+                            exportProjects.forEach(proj => {
+                                let projData = [];
+                                projData.push(headers);
+                                let hasData = false;
+
+                                proj.pos.forEach(po => {
+                                    po.items.forEach(item => {
+                                        const row = [
+                                            proj.name,
+                                            po.poNumber,
+                                            po.vendorName,
+                                            po.condition,
+                                            item.name,
+                                            item.poQty,
+                                            item.inbound,
+                                            item.inboundDate || '',
+                                            item.outbound,
+                                            item.outboundDate || '',
+                                            item.dueDate || '',
+                                            item.note || ''
+                                        ];
+                                        allData.push(row);
+                                        projData.push(row);
+                                        hasData = true;
+                                    });
+                                });
+
+                                if (hasData) {
+                                    const wsProj = XLSX.utils.aoa_to_sheet(projData);
+                                    let sheetName = proj.name.substring(0, 31).replace(/[\[\]\*\\\/\?]/g, '');
+                                    if (wb.SheetNames.includes(sheetName)) {
+                                        sheetName = sheetName.substring(0, 27) + '_' + proj.code.substring(0, 3);
+                                    }
+                                    XLSX.utils.book_append_sheet(wb, wsProj, sheetName);
+                                }
+                            });
+
+                            const wsAll = XLSX.utils.aoa_to_sheet(allData);
+                            XLSX.utils.book_append_sheet(wb, wsAll, '통합 데이터');
+                            const lastSheet = wb.SheetNames.pop();
+                            wb.SheetNames.unshift(lastSheet);
+
+                            XLSX.writeFile(wb, '입출고현황_일괄다운로드.xlsx');
+                        },
+                        selectProject(proj) {
+                            this.selectedProjectId = proj.id;
+                            this.resetFilters();
+                        },
+                        selectPoItem(po) {
+                            this.selectedPoNumber = po.poNumber;
+                            this.resetFilters();
+                        },
+                        totalPoQty(po) {
+                            if (!po) return 0;
+                            return po.totalPoQty || 0;
+                        },
+                        totalPoInbound(po) {
+                            if (!po) return 0;
+                            if (!po.items) return po.totalInbound || 0;
+                            return po.items.reduce((sum, g) => sum + Number(g.inbound || 0), 0);
+                        },
+                        totalPoOutbound(po) {
+                            if (!po) return 0;
+                            if (!po.items) return po.totalOutbound || 0;
+                            let total = 0;
+                            po.items.forEach(g => {
+                                if (g.allocations) {
+                                    g.allocations.forEach(a => {
+                                        total += Number(a.item.outbound || 0);
+                                    });
+                                }
+                            });
+                            return total;
+                        },
+                        poInboundProgress(po) {
+                            if (!po) return 0;
+                            const qty = this.totalPoQty(po);
+                            if (qty === 0) return 0;
+                            return Math.round((this.totalPoInbound(po) / qty) * 100);
+                        },
+                        poOutboundProgress(po) {
+                            if (!po) return 0;
+                            const qty = this.totalPoQty(po);
+                            if (qty === 0) return 0;
+                            return Math.round((this.totalPoOutbound(po) / qty) * 100);
+                        },
+                        totalProjectPoQty(project) {
+                            let total = 0;
+                            if (!project || !project.pos) return 0;
+                            project.pos.forEach(po => po.items.forEach(item => {
+                                if (item.ownerId === this.effectiveUserId) {
+                                    total += Number(item.poQty || 0);
+                                }
+                            }));
+                            return total;
+                        },
+                        totalProjectInbound(project) {
+                            let total = 0;
+                            if (!project || !project.pos) return 0;
+                            project.pos.forEach(po => po.items.forEach(item => {
+                                if (item.ownerId === this.effectiveUserId) {
+                                    total += Number(item.inbound || 0);
+                                }
+                            }));
+                            return total;
+                        },
+                        totalProjectOutbound(project) {
+                            let total = 0;
+                            if (!project || !project.pos) return 0;
+                            project.pos.forEach(po => po.items.forEach(item => {
+                                if (item.ownerId === this.effectiveUserId) {
+                                    total += Number(item.outbound || 0);
+                                }
+                            }));
+                            return total;
+                        },
+                        projectInboundProgress(project) {
+                            if (!project) return 0;
+                            const total = this.totalProjectPoQty(project);
+                            if (total === 0) return 0;
+                            return Math.round((this.totalProjectInbound(project) / total) * 100);
+                        },
+                        projectOutboundProgress(project) {
+                            if (!project) return 0;
+                            const total = this.totalProjectPoQty(project);
+                            if (total === 0) return 0;
+                            return Math.round((this.totalProjectOutbound(project) / total) * 100);
+                        },
+                        formatKrw(value) {
+                            if (value === null || value === undefined || value === '') return '0';
+                            return Number(String(value).replace(/[^\d]/g, '')).toLocaleString();
+                        },
+                        updateKrw(item, field, event) {
+                            const rawValue = event.target.value.replace(/[^\d]/g, '');
+                            item[field] = rawValue ? parseInt(rawValue, 10) : 0;
+                            this.markEdited(item);
+                        },
+                        markEdited(item) {
+                            if (item.outbound > item.inbound) {
+                                item.outbound = item.inbound;
+                            }
+                            item.isEdited = true;
+                            this.autoSave();
+                        },
+                        markEditedOutbound(item) {
+                            if (item.outbound > item.inbound) {
+                                alert("데이터 정합성 오류: 출고 배정 수량이 입고 수량을 초과할 수 없습니다!");
+                                item.outbound = item.inbound;
+                            }
+                            item.isEdited = true;
+                            this.autoSave();
+                        },
+                        autoSave() {
+                            if (this.saveTimeout) {
+                                clearTimeout(this.saveTimeout);
+                            }
+                            this.saveTimeout = setTimeout(() => {
+                                this.showSaveToast = true;
+                                setTimeout(() => { this.showSaveToast = false; }, 2000);
+                                // Reset edited state after simulated save
+                                this.projects.forEach(project => {
+                                    project.pos.forEach(po => {
+                                        po.items.forEach(item => {
+                                            item.isEdited = false;
+                                        });
+                                    });
+                                });
+                            }, 600);
+                        },
+                        applyBulkDate(po, field) {
+                            if (!po) return;
+
+                            const fieldNameMap = {
+                                'inboundDate': '입고일자',
+                                'outboundDate': '출고일자',
+                                'dueDate': '계약납기일'
+                            };
+                            const label = fieldNameMap[field];
+
+                            const today = new Date().toISOString().split('T')[0];
+                            const promptMsg = `[${label} 일괄입력]\n\n해당 발주서(${po.poNumber})의 모든 품목에 동일한 날짜를 적용합니다.\n날짜를 YYYY-MM-DD 형식으로 입력하세요.\n(입력창을 비우고 확인을 누르면 일괄 초기화됩니다)`;
+                            const date = prompt(promptMsg, today);
+
+                            if (date === null) return;
+
+                            let count = 0;
+                            po.items.forEach(item => {
+                                if (item[field] !== date) {
+                                    item[field] = date;
+                                    this.markEdited(item);
+                                    count++;
+                                }
+                            });
+
+                            if (count > 0) {
+                                setTimeout(() => alert(`선택된 발주서의 총 ${count}건의 ${label}가 일괄 적용되었습니다.`), 10);
+                            }
+                        },
+
+                        applyBulkDatePoView(po, field) {
+                            if (!po) return;
+                            const fieldNameMap = { 'inboundDate': '입고일자', 'outboundDate': '출고일자', 'dueDate': '계약납기일' };
+                            const label = fieldNameMap[field];
+                            const today = new Date().toISOString().split('T')[0];
+                            const promptMsg = `[${label} 일괄입력]\n\n해당 발주서(${po.poNumber})의 모든 품목에 동일한 날짜를 적용합니다.\n날짜를 YYYY-MM-DD 형식으로 입력하세요.\n(입력창을 비우고 확인을 누르면 일괄 초기화됩니다)`;
+                            const date = prompt(promptMsg, today);
+                            if (date === null) return;
+                            let count = 0;
+                            po.items.forEach(group => {
+                                // Update group level fields
+                                if (group[field] !== date) {
+                                    group[field] = date;
+                                }
+                                // Update all allocations within the group
+                                group.allocations.forEach(alloc => {
+                                    if (alloc.item[field] !== date) {
+                                        alloc.item[field] = date;
+                                        this.markEdited(alloc.item);
+                                        count++;
+                                    }
+                                });
+                            });
+                            if (count > 0) {
+                                setTimeout(() => alert(`선택된 발주서의 총 ${count}건의 ${label}가 일괄 적용되었습니다.`), 10);
+                            }
+                        },
+                        // --- Expansion State Helpers ---
+                        isExpanded(type, id, defaultVal = true) {
+                            const key = `${type}_${id}`;
+                            if (this.expandedStates[key] === undefined) {
+                                return defaultVal;
+                            }
+                            return this.expandedStates[key];
+                        },
+                        toggleExpand(type, id) {
+                            const key = `${type}_${id}`;
+                            const current = this.isExpanded(type, id);
+                            this.expandedStates[key] = !current;
+                        },
+                        isItemLocked(item) {
+                            if (!item) return false;
+                            if (this.activeUserId === 'manager') return true;
+                            return item.ownerId !== this.effectiveUserId;
+                        },
+                        // Dev Guide Methods
+                        showMemo(event, key) {
+                            if (this._memoTimer) clearTimeout(this._memoTimer);
+                            this.activeMemoKey = key;
+
+                            // Intelligent positioning: flip to left if near right edge
+                            const memoWidth = 480;
+                            let x = event.clientX + 15;
+                            let y = event.clientY + 15;
+
+                            if (x + memoWidth > window.innerWidth) {
+                                x = event.clientX - memoWidth - 15;
+                            }
+
+                            this.memoPos = { x, y };
+                            this.memoVisible = true;
+                        },
+                        keepMemo() {
+                            if (this._memoTimer) clearTimeout(this._memoTimer);
+                            this.memoVisible = true;
+                        },
+                        hideMemo() {
+                            // Slight delay to allow moving mouse into the memo itself
+                            if (this._memoTimer) clearTimeout(this._memoTimer);
+                            this._memoTimer = setTimeout(() => {
+                                this.memoVisible = false;
+                            }, 200);
+                        },
+                        saveMemo(key) {
+                            // Simulated persistence
+                            console.log(`Description updated for ${key}`);
+                            this.autoSave();
+                        }
+                    }
+                }).mount('#app')
+            </script>
+</body>
+
+</html>

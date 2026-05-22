@@ -1,0 +1,2310 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>거래처 견적 제출 — ㈜한솔무역</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      font-size: 13px;
+      min-height: 100vh;
+    }
+
+    /* ─────────── 공통 ─────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: #0d9488;
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #0f766e;
+    }
+
+    .btn-outline {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      color: #374151;
+    }
+
+    .btn-outline:hover {
+      background: #f8fafc;
+    }
+
+    .btn-sm {
+      padding: 5px 11px;
+      font-size: 12px;
+    }
+
+    .btn-lg {
+      padding: 11px 28px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    /* ─────────── 화면 전환 ─────────── */
+    .screen {
+      display: none !important;
+    }
+
+    .screen.active {
+      display: block !important;
+    }
+
+    #screen-loading.active {
+      display: flex !important;
+    }
+
+    /* ════════════════════════════════════
+   1단계: 이메일 클라이언트 화면
+════════════════════════════════════ */
+    #screen-email {
+      background: #e8edf2;
+      min-height: 100vh;
+    }
+
+    .email-app {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 100vh;
+      box-shadow: 0 0 40px rgba(0, 0, 0, .12);
+    }
+
+    .email-sidebar {
+      background: #1e2b3a;
+      color: #94a3b8;
+      padding: 16px 0;
+    }
+
+    .email-sidebar-logo {
+      padding: 10px 18px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .email-sidebar-btn {
+      display: block;
+      margin: 0 12px 12px;
+      background: #0d9488;
+      color: #fff;
+      text-align: center;
+      padding: 9px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .email-nav-item {
+      padding: 8px 18px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      border-radius: 0;
+    }
+
+    .email-nav-item:hover {
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .email-nav-item.active {
+      background: rgba(255, 255, 255, .12);
+      color: #fff;
+    }
+
+    .email-nav-badge {
+      margin-left: auto;
+      background: #ef4444;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+
+    .email-main {
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 메일 목록 */
+    .email-list-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .email-list-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .email-item {
+      padding: 14px 20px;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer;
+      transition: background .1s;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .email-item:hover {
+      background: #f8fafc;
+    }
+
+    .email-item.unread {
+      background: #fffbeb;
+    }
+
+    .email-item.selected {
+      background: #f0fdfa;
+      border-left: 3px solid #0d9488;
+    }
+
+    .email-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #0d9488;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .email-from {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .email-subject {
+      font-size: 12px;
+      color: #374151;
+      margin-top: 2px;
+    }
+
+    .email-preview {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-time {
+      font-size: 11px;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+
+    .email-unread-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #0d9488;
+      margin-top: 4px;
+    }
+
+    /* 메일 본문 뷰어 */
+    .email-viewer {
+      display: none;
+      flex-direction: column;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .email-viewer.show {
+      display: flex;
+    }
+
+    .email-viewer-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .email-viewer-subject {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .email-viewer-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .email-viewer-body {
+      padding: 20px 24px;
+      line-height: 1.8;
+      font-size: 13px;
+      flex: 1;
+    }
+
+    .email-viewer-body p {
+      margin-bottom: 10px;
+    }
+
+    .email-viewer-body .company-name {
+      font-weight: 700;
+      color: #0d9488;
+    }
+
+    /* 링크 버튼 (메일 본문 내) */
+    .email-link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #0d9488;
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 9px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all .15s;
+      margin: 6px 0;
+    }
+
+    .email-link-btn:hover {
+      background: #0f766e;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(13, 148, 136, .3);
+    }
+
+    .email-link-btn .arrow {
+      font-size: 16px;
+    }
+
+    .email-divider {
+      border: none;
+      border-top: 1px solid #e2e8f0;
+      margin: 14px 0;
+    }
+
+    .email-footer-note {
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.7;
+    }
+
+    /* 첨부파일 알림 배너 */
+    .attach-alert-banner {
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #92400e;
+      font-size: 12px;
+      font-weight: 600;
+      animation: pulse-border 2s infinite;
+    }
+
+    @keyframes pulse-border {
+      0% {
+        border-color: #fcd34d;
+        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4);
+      }
+
+      50% {
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
+      }
+
+      100% {
+        border-color: #fcd34d;
+        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+      }
+    }
+
+    /* ════════════════════════════════════
+   링크 전환 애니메이션
+════════════════════════════════════ */
+    #screen-loading {
+      background: #f0fdfa;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .loading-ring {
+      width: 52px;
+      height: 52px;
+      border: 4px solid #ccfbf1;
+      border-top-color: #0d9488;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loading-text {
+      font-size: 14px;
+      color: #0f766e;
+      font-weight: 500;
+    }
+
+    .loading-url {
+      font-size: 11px;
+      color: #94a3b8;
+      font-family: monospace;
+      margin-top: 4px;
+    }
+
+    /* ════════════════════════════════════
+   2단계: 견적 입력 화면
+════════════════════════════════════ */
+    #screen-form {
+      background: #e8edf2;
+      min-height: 100vh;
+    }
+
+    /* 헤더 */
+    .form-header {
+      background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+      color: #fff;
+      padding: 0 28px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .form-header-left .title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .form-header-left .sub {
+      font-size: 11px;
+      opacity: .75;
+      margin-top: 1px;
+    }
+
+    .form-header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sync-pill {
+      background: rgba(255, 255, 255, .18);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .sync-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #4ade80;
+      animation: blink 1.6s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: .3;
+      }
+    }
+
+    /* 문서 래퍼 — 흰 종이 한 장 */
+    .doc-sheet {
+      background: #fff;
+      width: 100%;
+      margin: 0;
+      box-shadow: none;
+      border-radius: 0;
+      overflow: hidden;
+    }
+
+    /* 안내 카드 */
+    .guide-card {
+      background: #f8fffe;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 14px 28px;
+      margin-bottom: 0;
+    }
+
+    .guide-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #0f766e;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .guide-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .guide-item {
+      border-radius: 7px;
+      padding: 9px 12px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .guide-ok {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+    }
+
+    .guide-alt {
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+    }
+
+    .guide-delay {
+      background: #eff6ff;
+      border: 1px solid #93c5fd;
+    }
+
+    .guide-na {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+    }
+
+    .guide-item .label {
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+
+    .label-ok {
+      color: #16a34a;
+    }
+
+    .label-alt {
+      color: #d97706;
+    }
+
+    .label-delay {
+      color: #2563eb;
+    }
+
+    .label-na {
+      color: #dc2626;
+    }
+
+    /* 요약 바 */
+    .summary-bar {
+      background: #f9fffe;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 10px 28px;
+      margin-bottom: 0;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .summary-label {
+      color: #64748b;
+    }
+
+    .summary-val {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .summary-divider {
+      width: 1px;
+      height: 18px;
+      background: #e2e8f0;
+    }
+
+    .total-display {
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .total-display .lbl {
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    .total-display .amt {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0d9488;
+      font-family: monospace;
+    }
+
+    /* 메인 테이블 */
+    .table-card {
+      background: #fff;
+      overflow: hidden;
+      margin-bottom: 0;
+    }
+
+    .table-card-header {
+      background: #f8fffe;
+      padding: 10px 28px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .table-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #134e4a;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table.rfq-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+
+    table.rfq-table th {
+      background: #f0fdfa;
+      padding: 8px 10px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: #0f766e;
+      border-bottom: 2px solid #ccfbf1;
+      white-space: nowrap;
+    }
+
+    table.rfq-table td {
+      padding: 0;
+      border-bottom: 1px solid #f0fdfa;
+      vertical-align: middle;
+    }
+
+    table.rfq-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    table.rfq-table .td-pad {
+      padding: 8px 10px;
+    }
+
+    /* 공급상태 셀 */
+    .supply-cell {
+      padding: 6px 8px;
+    }
+
+    .supply-toggle {
+      display: flex;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+      overflow: hidden;
+      background: #f8fafc;
+    }
+
+    .supply-toggle-btn {
+      flex: 1;
+      padding: 6px 4px;
+      font-size: 11px;
+      font-weight: 500;
+      text-align: center;
+      cursor: pointer;
+      border: none;
+      background: none;
+      transition: all .12s;
+      color: #94a3b8;
+    }
+
+    .supply-toggle-btn:hover:not(.active-ok):not(.active-alt):not(.active-na) {
+      background: #f0fdfa;
+      color: #0d9488;
+    }
+
+    .supply-toggle-btn.active-ok {
+      background: #dcfce7;
+      color: #16a34a;
+      font-weight: 700;
+    }
+
+    .supply-toggle-btn.active-alt {
+      background: #fef9c3;
+      color: #a16207;
+      font-weight: 700;
+    }
+
+    .supply-toggle-btn.active-na {
+      background: #fee2e2;
+      color: #dc2626;
+      font-weight: 700;
+    }
+
+    /* 단가 입력 */
+    .price-cell {
+      padding: 6px 8px;
+    }
+
+    .price-input {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+      font-size: 13px;
+      font-family: monospace;
+      text-align: right;
+      outline: none;
+      color: #134e4a;
+    }
+
+    .price-input:focus {
+      border-color: #14b8a6;
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, .12);
+    }
+
+    .price-input.na-price {
+      background: #fef2f2;
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .price-input.readonly-mode {
+      background: #f8fafc;
+      color: #475569;
+      cursor: default;
+    }
+
+    /* 공급합계 셀 */
+    .subtotal-cell {
+      font-family: monospace;
+      font-size: 12px;
+      color: #374151;
+      text-align: right;
+      padding: 9px 14px;
+      white-space: nowrap;
+    }
+
+    .subtotal-cell.has-value {
+      color: #0d9488;
+      font-weight: 600;
+    }
+
+    /* 비고 입력 */
+    .remark-input {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+      font-size: 12px;
+      outline: none;
+      color: #134e4a;
+    }
+
+    .remark-input:focus {
+      border-color: #14b8a6;
+    }
+
+    .remark-input.alt-required {
+      border-color: #f59e0b;
+      background: #fffbeb;
+    }
+
+    .remark-input.readonly-mode {
+      background: #f8fafc;
+      color: #475569;
+      cursor: default;
+    }
+
+    /* 행 상태에 따른 하이라이트 */
+    .row-ok {}
+
+    .row-alt td {
+      background: #fffef0 !important;
+    }
+
+    .row-na td {
+      background: #fff8f8 !important;
+    }
+
+    .row-na .td-pad {
+      color: #94a3b8;
+    }
+
+    /* 합계 패널 */
+    .total-panel {
+      background: #134e4a;
+      color: #fff;
+      border-radius: 12px;
+      padding: 18px 22px;
+      margin-bottom: 20px;
+    }
+
+    .total-panel .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      font-size: 12px;
+      opacity: .8;
+    }
+
+    .total-panel .row.divider-row {
+      border-top: 1px solid rgba(255, 255, 255, .15);
+      margin-top: 8px;
+      padding-top: 12px;
+    }
+
+    .total-panel .row.main {
+      font-size: 19px;
+      font-weight: 700;
+      opacity: 1;
+    }
+
+    .total-panel .row.main span:last-child {
+      font-family: monospace;
+    }
+
+    /* 제출 전 체크 */
+    .submit-check-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+
+    /* 하단 고정 버튼바 */
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border-top: 2px solid #e2e8f0;
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 40;
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, .06);
+    }
+
+    .bottom-bar-info {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .bottom-bar-info strong {
+      color: #0f766e;
+    }
+
+    /* ════════════════════════════════════
+   3단계: 제출 완료 + 읽기전용
+════════════════════════════════════ */
+    /* 완료 배너 */
+    .complete-banner {
+      background: linear-gradient(135deg, #065f46, #0d9488);
+      color: #fff;
+      padding: 24px 28px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .complete-check {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      flex-shrink: 0;
+    }
+
+    .complete-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .complete-sub {
+      font-size: 13px;
+      opacity: .85;
+    }
+
+    .complete-meta {
+      margin-left: auto;
+      text-align: right;
+      font-size: 12px;
+      opacity: .8;
+      line-height: 1.8;
+    }
+
+    /* 읽기전용 안내 배너 */
+    .readonly-notice {
+      background: #fffbeb;
+      border-bottom: 2px solid #f59e0b;
+      padding: 10px 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #92400e;
+    }
+
+    /* 제출 결과 요약 */
+    .result-summary {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 20px 20px 40px;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .result-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px 16px;
+      text-align: center;
+    }
+
+    .result-card .num {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .result-card .lbl {
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    .result-card.ok-card .num {
+      color: #16a34a;
+    }
+
+    .result-card.alt-card .num {
+      color: #d97706;
+    }
+
+    .result-card.na-card .num {
+      color: #dc2626;
+    }
+
+    .result-card.total-card .num {
+      color: #0d9488;
+      font-family: monospace;
+      font-size: 18px;
+    }
+
+    /* ─── 공통 카드 ─── */
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 18px 22px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #134e4a;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .badge-ok {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+
+    .badge-alt {
+      background: #fef9c3;
+      color: #a16207;
+    }
+
+    .badge-na {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .badge-gray {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 1px solid #e2e8f0;
+    }
+
+    /* ─── 토스트 ─── */
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #134e4a;
+      color: #fff;
+      padding: 11px 20px;
+      border-radius: 9px;
+      font-size: 13px;
+      z-index: 999;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all .3s;
+      max-width: 360px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .font-mono {
+      font-family: monospace;
+    }
+
+    .text-muted {
+      color: #64748b;
+    }
+
+    .text-sm {
+      font-size: 12px;
+    }
+
+    .text-xs {
+      font-size: 11px;
+    }
+
+    .mt1 {
+      margin-top: 6px;
+    }
+
+    .mt2 {
+      margin-top: 12px;
+    }
+
+    .flex {
+      display: flex;
+    }
+
+    .gap2 {
+      gap: 8px;
+    }
+
+    .jbetween {
+      justify-content: space-between;
+    }
+
+    .icenter {
+      align-items: center;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ════════ 1단계: 이메일 화면 ════════ -->
+  <div class="screen active" id="screen-email">
+    <div class="email-app">
+
+      <!-- 사이드바 -->
+      <div class="email-sidebar">
+        <div class="email-sidebar-logo">✉️ Mail</div>
+        <div class="email-sidebar-btn">+ 메일 작성</div>
+        <div class="email-nav-item active">📥 받은편지함 <span class="email-nav-badge">1</span></div>
+        <div class="email-nav-item">⭐ 중요메일</div>
+        <div class="email-nav-item">📤 보낸메일함</div>
+        <div class="email-nav-item">📁 임시보관함</div>
+        <div class="email-nav-item">🗑 휴지통</div>
+        <div style="margin:16px 12px 6px;font-size:10px;color:#475569;font-weight:600;letter-spacing:.06em;">폴더</div>
+        <div class="email-nav-item">📂 구매/견적</div>
+        <div class="email-nav-item">📂 거래처</div>
+      </div>
+
+      <!-- 메인 영역 -->
+      <div class="email-main">
+        <div class="email-list-header">
+          <div class="email-list-title">받은편지함</div>
+          <div style="font-size:12px;color:#94a3b8;">1개 읽지 않음</div>
+        </div>
+
+        <!-- 메일 목록 -->
+        <div id="email-list">
+          <!-- 미열람 메일 (클릭 대상) -->
+          <div class="email-item unread" id="email-rfq" onclick="openEmail()">
+            <div class="email-avatar">발</div>
+            <div>
+              <div class="flex jbetween">
+                <div class="email-from">(주)네오비에이치 구매팀 &lt;purchase@neobh.co.kr&gt;</div>
+                <div class="email-time">오늘 09:16</div>
+              </div>
+              <div class="email-subject">📋 [견적요청] RFQP-2025-0089 — G022600061 · 2026년 상반기 통신 경상자재 및 전산소모품 구매 (㈜한솔무역)
+              </div>
+              <div class="email-preview">안녕하세요, (주)네오비에이치 구매팀입니다. 아래 링크를 통해 견적을 제출해 주시기 바랍니다. 링크 유효기간: 2026-05-13...
+              </div>
+            </div>
+            <div class="email-unread-dot"></div>
+          </div>
+
+          <!-- 다른 메일들 (더미) -->
+          <div class="email-item">
+            <div class="email-avatar" style="background:#6366f1;">삼</div>
+            <div>
+              <div class="flex jbetween">
+                <div class="email-from">삼성전자 B2B</div>
+                <div class="email-time">어제</div>
+              </div>
+              <div class="email-subject">2025 하반기 B2B 프로모션 안내</div>
+              <div class="email-preview">귀사의 발전을 기원합니다. 이번 하반기 특별 프로모션을...</div>
+            </div>
+            <div style="width:8px;"></div>
+          </div>
+          <div class="email-item">
+            <div class="email-avatar" style="background:#f59e0b;">LG</div>
+            <div>
+              <div class="flex jbetween">
+                <div class="email-from">LG전자 기업거래</div>
+                <div class="email-time">6월 1일</div>
+              </div>
+              <div class="email-subject">그램 신제품 출시 및 기업 특가 안내</div>
+              <div class="email-preview">LG 그램 신모델이 출시되었습니다. 기업 특가...</div>
+            </div>
+            <div style="width:8px;"></div>
+          </div>
+          <div class="email-item">
+            <div class="email-avatar" style="background:#ef4444;">세</div>
+            <div>
+              <div class="flex jbetween">
+                <div class="email-from">세금계산서 발행 알림</div>
+                <div class="email-time">5월 31일</div>
+              </div>
+              <div class="email-subject">[전자세금계산서] 5월 거래분 발행 완료</div>
+              <div class="email-preview">전자세금계산서가 발행되었습니다. 확인 부탁드립니다...</div>
+            </div>
+            <div style="width:8px;"></div>
+          </div>
+        </div>
+
+        <!-- 메일 본문 뷰어 -->
+        <div class="email-viewer" id="email-viewer">
+          <div class="email-viewer-header">
+            <div class="email-viewer-subject">📋 [견적요청] RFQP-2025-0089 — G022600061 · 2026년 상반기 통신 경상자재 및 전산소모품 구매
+              (㈜한솔무역)</div>
+            <div class="email-viewer-meta">
+              <span>보낸사람: <strong>(주)네오비에이치 구매팀</strong> &lt;purchase@neobh.co.kr&gt;</span>
+              <span>받는사람: 한솔무역 구매담당 &lt;rfq@hansol-trade.com&gt;</span>
+              <span>2026년 5월 8일 (금) 09:16</span>
+            </div>
+          </div>
+          <div class="email-viewer-body">
+            <p>안녕하세요, <span class="company-name">[거래처이름]</span> 담당자님.</p>
+            <p><span class="company-name">(주)네오비에이치</span> 구매팀입니다.</p>
+            <p>아래와 같이 견적을 요청드립니다. 아래 버튼을 클릭하시면 견적 입력 페이지로 이동합니다.</p>
+
+            <!-- 첨부파일 알림 배너 (JS에서 토글) -->
+            <div id="email-attach-banner" class="attach-alert-banner" style="display:none;">
+              <span>⚠️</span>
+              <div>구매팀에서 보낸 첨부파일이 있습니다. 반드시 확인 후 견적을 작성해 주세요.</div>
+            </div>
+
+            <div
+              style="background:#f8fffe;border:1px solid #ccfbf1;border-radius:10px;padding:16px 20px;margin:16px 0;">
+              <div style="font-size:13px;font-weight:700;color:#134e4a;margin-bottom:10px;">📋 견적 요청 정보</div>
+              <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                <tr>
+                  <td style="padding:4px 0;color:#64748b;">건명</td>
+                  <td style="font-weight:600;">[견적번호] · [프로젝트명]</td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;color:#64748b;">요청 품목</td>
+                  <td>N 개 품목</td>
+                </tr>
+
+                <tr>
+                  <td style="padding:4px 0;color:#64748b;">제출 기한</td>
+                  <td style="color:#dc2626;font-weight:600;">2026년 5월 13일 (수) 18:00</td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;color:#64748b;">담당자</td>
+                  <td>[담당자이름]</td>
+                </tr>
+              </table>
+            </div>
+
+            <div style="text-align:center;margin:22px 0 18px;">
+              <div onclick="goToLinkLoading()" class="email-link-btn">
+                🔗 견적 제출 페이지 바로가기 <span class="arrow">→</span>
+              </div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:8px;font-family:monospace;">
+                https://rfq.neobh.co.kr/submit?token=rfqp-0089-v2-han&expires=20260513</div>
+            </div>
+
+
+
+            <hr class="email-divider">
+
+            <div class="email-footer-note">
+              <p>⚠️ 본 링크는 <strong>㈜한솔무역 전용</strong>이며 타인과 공유하지 마세요.</p>
+              <p>⚠️ 제출 후에는 수정이 불가합니다. 신중히 입력해 주세요.</p>
+              <p>⚠️ 링크 유효기간은 <strong>2026년 5월 13일</strong>까지입니다.</p>
+              <br>
+              <p>문의사항은 구매팀으로 연락 주세요. 감사합니다.</p>
+              <br>
+              <p style="color:#475569;">(주)네오비에이치 구매팀<br>T. 02-1234-5678 | purchase@neobh.co.kr</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 전환 로딩 ════════ -->
+  <div class="screen" id="screen-loading">
+    <div class="loading-ring"></div>
+    <div class="loading-text">견적 제출 페이지를 불러오는 중...</div>
+    <div class="loading-url">https://rfq.neobh.co.kr/submit?token=rfqp-0089-v2-han</div>
+  </div>
+
+  <!-- ════════ 2단계: 견적 입력 ════════ -->
+  <div class="screen" id="screen-form">
+    <!-- 헤더 -->
+    <div class="form-header">
+      <div class="form-header-left">
+        <div class="title">견적 제출 — ㈜한솔무역</div>
+        <div class="sub">(주)네오비에이치 구매팀 · RFQP-2025-0089 · G022600061 · 2026년 상반기 통신 경상자재 및 전산소모품 구매</div>
+      </div>
+      <div class="form-header-right">
+        <div class="sync-pill">
+          <div class="sync-dot"></div> 구매담당자 화면 연동중
+        </div>
+        <div style="font-size:11px;opacity:.75;">제출기한: 2026-05-13</div>
+        <button onclick="downloadVendorRfqPdf()"
+          style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;">
+          📥 견적요청서 PDF
+        </button>
+        <button id="header-attach-btn" onclick="toggleHeaderAttach()"
+          style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;">
+          📎 첨부파일확인
+        </button>
+        <div id="draft-saved-msg" style="font-size:11px;opacity:0;color:#4ade80;transition:opacity .5s;">저장됨 ✓</div>
+      </div>
+    </div>
+
+    <!-- 문서 시트 시작 — 흰 종이 한 장 -->
+    <div class="doc-sheet">
+      <!-- 견적 입력 화면 상단 첨부파일 섹션 (doc-sheet 내부로 이동) -->
+      <div id="form-attach-section"
+        style="background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:12px 24px; display:none;">
+        <div
+          style="font-size:12px; font-weight:700; color:#1e293b; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+          📎 구매팀 첨부파일 <span style="font-weight:400; font-size:11px; color:#64748b;">(내용을 확인하고 견적을 작성하세요)</span>
+        </div>
+        <div id="form-attach-list" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
+      </div>
+      <!-- 회사 헤더 -->
+      <div
+        style="display:flex;align-items:center;justify-content:space-between;padding:16px 32px;border-bottom:3px solid #e8501a;">
+        <img
+          src="data:image/png;base64,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AJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgKYIgAACApAiCAAAAkiIIAgAASIogCAAAICmCIAAAgKQIggAAAJIiCAIAAEiKIAgAACApgiAAAICkCIIAAACSIggCAABIiiAIAAAgqf8HDfNkfyhjiIcAAAAASUVORK5CYII="
+          alt="NEO BH" style="height:84px;object-fit:contain;">
+        <div style="font-size:11px;color:#555;text-align:right;line-height:1.8;">
+          주소: 경기도 김포시 고촌읍 전호로 32 | 사업자번호: 822-87-00677 | 홈페이지: www.neobh.kr<br>
+          TEL: 031-987-3069 | FAX: 031-998-3069 | E-mail: balhea@balhea.kr
+        </div>
+      </div>
+      <!-- 문서 제목 + 날짜/번호 -->
+      <div
+        style="display:flex;align-items:center;justify-content:space-between;padding:10px 28px;border-bottom:1px solid #e2e8f0;">
+        <div style="font-size:20px;font-weight:700;letter-spacing:5px;color:#1e293b;">견 적 요 청 서</div>
+        <div style="font-size:12px;color:#555;text-align:right;line-height:2;">
+          <span>견적일자: <strong>2026-05-08</strong></span>
+          &nbsp;&nbsp;&nbsp;
+          <span>Estimate No. <strong>NB_251021_E_47</strong></span>
+        </div>
+      </div>
+      <!-- 수신처 / 발신처 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0;">
+        <div style="border-right:1px solid #e2e8f0;">
+          <div
+            style="background:#f8fafc;text-align:center;padding:5px;font-size:12px;font-weight:700;border-bottom:1px solid #e2e8f0;color:#374151;">
+            수신처</div>
+          <div style="display:grid;grid-template-columns:70px 1fr;font-size:12px;">
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f1f5f9;color:#64748b;">
+              업체명</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-weight:600;">㈜한솔무역</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f1f5f9;color:#64748b;">
+              연락처</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;">—</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f1f5f9;color:#64748b;">
+              담당자</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;">박한솔</div>
+            <div style="padding:5px 12px;border-right:1px solid #f1f5f9;color:#64748b;">건명</div>
+            <div style="padding:5px 12px;">G022600061 · 2026년 상반기 통신 경상자재 및 전산소모품 구매</div>
+          </div>
+        </div>
+        <div>
+          <div
+            style="background:#f8fafc;text-align:center;padding:5px;font-size:12px;font-weight:700;border-bottom:1px solid #e2e8f0;color:#374151;">
+            발신처</div>
+          <div style="display:grid;grid-template-columns:70px 1fr;font-size:12px;">
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f1f5f9;color:#64748b;">
+              상호명</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-weight:600;">네오비에이치</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f1f5f9;color:#64748b;">
+              대표자명</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;">장재용</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f1f5f9;color:#64748b;">
+              담당자명</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;">구매팀 담당자</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f1f5f9;color:#64748b;">
+              연락처</div>
+            <div style="padding:5px 12px;border-bottom:1px solid #f1f5f9;">031-987-3069</div>
+            <div style="padding:5px 12px;border-right:1px solid #f1f5f9;color:#64748b;">E-mail</div>
+            <div style="padding:5px 12px;">balhea@balhea.kr</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-body">
+      <!-- 입력 안내 -->
+      <div class="guide-card">
+        <div class="guide-title">📌 견적 입력 안내</div>
+        <div class="guide-grid">
+          <div class="guide-item guide-ok">
+            <div class="label label-ok">✅ 공급가능</div>
+            단가를 입력하세요. 기본값은 공급가능입니다.
+          </div>
+          <div class="guide-item guide-alt">
+            <div class="label label-alt">🔄 대체제안</div>
+            비고란에 대체품 제조사·모델명·규격을 <strong>반드시</strong> 기입하세요.
+          </div>
+          <div class="guide-item guide-delay">
+            <div class="label label-delay">⏳ 일시품절</div>
+            입고 지연 품목입니다. 단가는 입력할 수 있습니다.
+          </div>
+          <div class="guide-item guide-na">
+            <div class="label label-na">✗ 공급불가</div>
+            단가 0원 자동 처리.
+          </div>
+        </div>
+      </div>
+
+
+
+      <!-- 요약바 -->
+      <div class="summary-bar">
+        <div class="summary-item"><span class="summary-label">공급가능</span> <span class="summary-val" id="cnt-ok"
+            style="color:#16a34a;">10</span></div>
+        <div class="summary-divider"></div>
+        <div class="summary-item"><span class="summary-label">대체제안</span> <span class="summary-val" id="cnt-alt"
+            style="color:#d97706;">0</span></div>
+        <div class="summary-divider"></div>
+        <div class="summary-item"><span class="summary-label">공급불가</span> <span class="summary-val" id="cnt-na"
+            style="color:#dc2626;">0</span></div>
+        <div class="summary-divider"></div>
+        <div class="summary-item"><span class="summary-label">단가 미입력</span> <span class="summary-val" id="cnt-empty"
+            style="color:#94a3b8;">10</span></div>
+        <div class="total-display">
+          <div class="lbl">합계(부가세별도) / 합계(부가세포함)</div>
+          <div class="amt"><span id="h-sub">0</span>원 &nbsp;/&nbsp; <span id="h-inc">0</span>원</div>
+        </div>
+      </div>
+
+      <!-- 품목 테이블 -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <div class="table-card-title">📦 요청 품목 목록 (<span id="det-item-cnt-v">10</span>개)</div>
+          <div style="font-size:11px;color:#64748b;">* 공급불가·대체제안만 변경하세요. 나머지는 단가만 입력하시면 됩니다.</div>
+        </div>
+        <div class="table-wrap">
+          <table class="rfq-table">
+            <thead>
+              <tr>
+                <th style="width:34px;text-align:center;">No</th>
+                <th style="width:130px;">품목명</th>
+                <th style="width:110px;">모델명 / 규격</th>
+                <th style="width:60px;text-align:center;background:#f8fafc;">발주 요청 수량</th>
+                <th style="width:60px;text-align:center;background:#f0fdfa;">공급 가능 수량</th>
+                <th style="width:140px;text-align:center;">공급상태</th>
+                <th style="width:90px;">과세 적용</th>
+                <th style="width:100px;text-align:right;">매입단가</th>
+                <th style="width:100px;text-align:right;">합계(부가세 별도)</th>
+                <th style="width:80px;text-align:right;">부가세</th>
+                <th style="width:100px;text-align:right;">합계(부가세 포함)</th>
+                <th style="width:18%;background:#f0f7ff;">비고</th>
+              </tr>
+            </thead>
+            <tbody id="rfq-tbody"></tbody>
+          </table>
+        </div>
+        <!-- 전체 요청/회신 비고 영역 -->
+        <div style="display:flex;border-top:1px solid #e2e8f0;background:#fafcff;">
+          <div style="flex:1;padding:16px;border-right:1px solid #e2e8f0;">
+            <div style="font-size:11px;font-weight:700;color:#2563eb;margin-bottom:8px;">↑ 요청 비고 (구매팀 전달사항)</div>
+            <div
+              style="width:100%;min-height:40px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;padding:8px;color:#374151;">
+              견적 기안 요청에 따른 상세 내용을 확인 바랍니다. 각 품목별 규격 준수 요망.</div>
+          </div>
+          <div style="flex:1;padding:16px;">
+            <div style="font-size:11px;font-weight:700;color:#10b981;margin-bottom:8px;">↓ 회신 비고 (거래처 의견)</div>
+            <textarea id="global-reply-remark" placeholder="전체 견적에 대한 회신 의견을 입력하세요"
+              style="width:100%;height:40px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;font-size:12px;padding:8px;resize:none;outline:none;"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- 합계 패널 -->
+      <div class="total-panel" style="margin:0;border-radius:0;padding:16px 28px;">
+        <div class="row"><span>공급가액 합계</span><span class="font-mono" id="t-sub">0원</span></div>
+        <div class="row"><span>부가세 (10%)</span><span class="font-mono" id="t-vat">0원</span></div>
+        <div class="row divider-row main"><span>합계 (부가세 포함)</span><span id="t-total">0원</span></div>
+      </div>
+
+      <!-- 제출 전 체크 -->
+      <div class="submit-check-card"
+        style="border-radius:0;border:none;border-top:1px solid #e2e8f0;padding:14px 28px;margin-bottom:0;">
+        <div class="card-title">✅ 제출 전 확인</div>
+        <div id="check-list" style="font-size:12px;line-height:2;"></div>
+      </div>
+
+      <!-- 제출 경고 안내 -->
+      <div
+        style="background:#fffbeb;border-top:1px solid #fcd34d;border-bottom:1px solid #fcd34d;padding:12px 28px;font-size:12px;color:#92400e;margin-bottom:80px;">
+        ✅ 임시저장 기능이 제공됩니다. 입력 중 상단 [💾 임시저장] 버튼으로 저장하세요. [최종 제출] 이후에는 수정이 불가합니다.
+      </div>
+    </div><!-- /doc-sheet -->
+
+    <!-- 하단 버튼바 -->
+    <div class="bottom-bar">
+      <div class="bottom-bar-info" id="bottom-info">단가 미입력 품목이 있습니다.</div>
+      <div class="flex gap2 icenter">
+        <button class="btn btn-outline" onclick="scrollTop()">↑ 상단</button>
+        <button class="btn btn-outline btn-lg" onclick="saveDraft()" style="color:#0f766e;border-color:#0d9488;">💾
+          임시저장</button>
+        <button class="btn btn-primary btn-lg" id="submit-btn" onclick="submitQuote()">최종 제출 →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 3단계: 제출 완료 + 읽기전용 ════════ -->
+  <div class="screen" id="screen-done">
+    <!-- 완료 배너 -->
+    <div class="complete-banner">
+      <div class="complete-check">✅</div>
+      <div>
+        <div class="complete-title">견적 제출 완료</div>
+        <div class="complete-sub">㈜한솔무역 · RFQP-2025-0089 · G022600061 · 2026년 상반기 통신 경상자재 및 전산소모품 구매</div>
+      </div>
+      <div class="complete-meta">
+        <div>제출 일시: <strong id="done-time">—</strong></div>
+        <div>구매담당자에게 자동 알림 발송됨</div>
+      </div>
+    </div>
+
+    <!-- 읽기전용 안내 -->
+    <div class="readonly-notice">
+      <span style="font-size:16px;">🔒</span>
+      <strong>이 페이지는 읽기 전용입니다.</strong> 견적 제출이 완료되어 더 이상 수정할 수 없습니다. 수정이 필요한 경우 구매팀에 직접 연락하세요.
+    </div>
+
+    <!-- 결과 요약 -->
+    <div class="result-summary">
+      <div class="result-grid">
+        <div class="result-card ok-card">
+          <div class="num" id="r-ok">0</div>
+          <div class="lbl">공급가능</div>
+        </div>
+        <div class="result-card alt-card">
+          <div class="num" id="r-alt">0</div>
+          <div class="lbl">대체제안</div>
+        </div>
+        <div class="result-card na-card">
+          <div class="num" id="r-na">0</div>
+          <div class="lbl">공급불가</div>
+        </div>
+        <div class="result-card total-card">
+          <div class="num" id="r-total">0원</div>
+          <div class="lbl">합계(부가세포함)</div>
+        </div>
+      </div>
+
+
+      <!-- 읽기전용 테이블 -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <div class="table-card-title">🔒 제출된 견적 내용 (읽기 전용)</div>
+        </div>
+        <div class="table-wrap">
+          <table class="rfq-table">
+            <thead>
+              <tr>
+                <th style="width:36px;text-align:center;">No</th>
+                <th style="min-width:160px;">품목명</th>
+                <th style="min-width:120px;">모델명 / 규격</th>
+                <th style="width:60px;text-align:center;">발주수량</th>
+                <th style="width:60px;text-align:center;">공급수량</th>
+                <th style="width:120px;">공급상태</th>
+                <th style="width:70px;">VAT</th>
+                <th style="width:120px;text-align:right;">단가 (원)</th>
+                <th style="width:110px;text-align:right;">공급합계</th>
+                <th style="width:25%;min-width:180px;">비고</th>
+              </tr>
+            </thead>
+            <tbody id="readonly-tbody"></tbody>
+          </table>
+        </div>
+        <!-- 전체 요청/회신 비고 영역 (읽기전용) -->
+        <div style="display:flex;border-top:1px solid #e2e8f0;background:#fafcff;">
+          <div style="flex:1;padding:16px;border-right:1px solid #e2e8f0;">
+            <div style="font-size:11px;font-weight:700;color:#2563eb;margin-bottom:8px;">↑ 요청 비고 (구매팀 전달사항)</div>
+            <div
+              style="width:100%;min-height:40px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;padding:8px;color:#374151;">
+              견적 기안 요청에 따른 상세 내용을 확인 바랍니다. 각 품목별 규격 준수 요망.</div>
+          </div>
+          <div style="flex:1;padding:16px;">
+            <div style="font-size:11px;font-weight:700;color:#10b981;margin-bottom:8px;">↓ 회신 비고 (거래처 의견)</div>
+            <div id="r-global-reply-remark"
+              style="width:100%;min-height:40px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;font-size:12px;padding:8px;color:#374151;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 합계 (읽기전용) -->
+      <div class="total-panel" style="margin-top:20px; max-width:400px; margin-left:auto;">
+        <div class="row"><span>공급가액 합계</span><span class="font-mono" id="r-sub">0원</span></div>
+        <div class="row"><span>부가세 (10%)</span><span class="font-mono" id="r-vat">0원</span></div>
+        <div class="row divider-row main"><span>합계 (부가세 포함)</span><span id="r-total2" style="font-size:24px;">0원</span>
+        </div>
+      </div>
+
+
+      <div
+        style="background:#f0fdfa;border:1px solid #ccfbf1;border-radius:10px;padding:14px 18px;font-size:12px;color:#0f766e;text-align:center;">
+        견적이 성공적으로 제출되었습니다. (주)네오비에이치 구매팀에서 검토 후 연락드리겠습니다.
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    /* ── 품목 데이터 (10개) ── */
+    let ITEMS = [
+      { name: '노트북 LG 그램 16', model: '16Z90R-K.AA5SK3', qty: 5, unit: 'EA' },
+      { name: '무선 마우스 로지텍', model: 'MX Master 3S', qty: 20, unit: 'EA' },
+      { name: 'USB-C 허브 7in1', model: 'Anker A8346', qty: 25, unit: 'EA' },
+      { name: '27인치 모니터', model: 'LG 27GP850-B', qty: 8, unit: 'EA' },
+      { name: '노이즈캔슬링 헤드셋', model: 'Sony WH-1000XM5', qty: 6, unit: 'EA' },
+      { name: '외장 SSD 1TB', model: 'Samsung T7 Shield', qty: 10, unit: 'EA' },
+      { name: 'A4 복사용지', model: '더블에이 80g', qty: 50, unit: '박스' },
+      { name: '전동 높낮이 책상', model: '플렉시스팟 E7', qty: 4, unit: 'EA' },
+      { name: '인체공학 의자', model: '허먼밀러 Aeron B', qty: 4, unit: 'EA' },
+      { name: '라벨 프린터', model: 'Brother PT-D610BT', qty: 3, unit: 'EA' },
+    ];
+
+    /* ── 입력 상태 (기본: 공급가능) ── */
+    let inputState = ITEMS.map((item) => ({ supply: 'ok', price: '', remark: '', remark2: '', vat: '별도', qty: item.qty }));
+    let isSubmitted = false;
+
+    /* ════ 이메일 화면 ════ */
+    function openEmail() {
+      try {
+        const projectName = localStorage.getItem('rfq_project_name') || '프로젝트';
+        const items = JSON.parse(localStorage.getItem('rfq_items_for_vendor') || '[]');
+
+        if (projectName) {
+          const subjects = document.querySelectorAll('.email-subject, .email-viewer-subject');
+          subjects.forEach(el => {
+            if (el.textContent.includes('RFQP-')) {
+              const parts = el.textContent.split(' — ');
+              if (parts.length > 1) {
+                el.textContent = parts[0] + ' — ' + projectName + ' (㈜한솔무역)';
+              }
+            }
+          });
+          const projNameCells = document.querySelectorAll('.email-viewer-body td');
+          projNameCells.forEach(td => {
+            if (td.textContent.includes('2026년 상반기 통신')) {
+              td.textContent = projectName;
+            }
+          });
+        }
+
+        if (items.length > 0) {
+          const itemCntCells = document.querySelectorAll('.email-viewer-body td');
+          itemCntCells.forEach(td => {
+            if (td.textContent.includes('개 품목')) {
+              td.textContent = items.length + '개 품목';
+            }
+          });
+
+          ITEMS.length = 0;
+          items.forEach(item => ITEMS.push({
+            name: item.name || '',
+            model: item.model || (item.spec || ''),
+            qty: parseInt(item.qty) || 1,
+            unit: item.unit || 'EA',
+            note: item.note || ''
+          }));
+        }
+      } catch (e) { console.error('Error in openEmail:', e); }
+
+      document.getElementById('email-rfq').classList.remove('unread');
+      document.getElementById('email-rfq').classList.add('selected');
+      document.getElementById('email-rfq').querySelector('.email-unread-dot').style.display = 'none';
+      const viewer = document.getElementById('email-viewer');
+      viewer.classList.add('show');
+      viewer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // 첨부파일 표시
+      loadEmailAttachments();
+    }
+
+    function loadEmailAttachments() {
+      try {
+        let raw = localStorage.getItem('rfq_attach_files');
+
+        // 시뮬레이션용: 데이터가 없으면 더미 데이터 삽입
+        if (!raw) {
+          const dummy = [
+            { name: '품목별 상세 규격서.pdf', size: 1024 * 450, type: 'application/pdf' },
+            { name: '인증서 및 성적서_샘플.zip', size: 1024 * 1250, type: 'application/zip' }
+          ];
+          localStorage.setItem('rfq_attach_files', JSON.stringify(dummy));
+          raw = JSON.stringify(dummy);
+        }
+
+        const files = JSON.parse(raw);
+        const section = document.getElementById('email-attach-section');
+        const list = document.getElementById('email-attach-list');
+        const banner = document.getElementById('email-attach-banner');
+        const formSection = document.getElementById('form-attach-section');
+        const formList = document.getElementById('form-attach-list');
+        const headerBtn = document.getElementById('header-attach-btn');
+
+        if (!files || files.length === 0) {
+          if (section) section.style.display = 'none';
+          if (banner) banner.style.display = 'none';
+          if (formSection) formSection.style.display = 'none';
+          return;
+        }
+
+        // 메일 본문 노출
+        if (section) section.style.display = 'block';
+        if (banner) banner.style.display = 'flex';
+
+        if (list) {
+          list.innerHTML = files.map(f => `
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+              <span style="font-size:18px;">${(f.type || '').includes('pdf') ? '📕' : '📄'}</span>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:600;color:#1e293b;">${f.name}</div>
+                <div style="font-size:11px;color:#94a3b8;">${(f.size / 1024).toFixed(0)}KB · 구매팀 첨부파일</div>
+              </div>
+              <button onclick="toast('실제 시스템에서 다운로드 가능합니다.')"
+                style="font-size:11px;padding:5px 10px;background:#0d9488;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;">
+                📥 다운로드
+              </button>
+            </div>`).join('');
+        }
+
+        // 헤더 버튼 활성화 (📎 첨부파일확인)
+        if (headerBtn) headerBtn.style.display = 'inline-flex';
+
+        if (formList) {
+          formList.innerHTML = files.map(f => `
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px; min-width:200px;">
+              <span style="font-size:14px;">${(f.type || '').includes('pdf') ? '📕' : '📄'}</span>
+              <div style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:500;">${f.name}</div>
+              <button onclick="toast('다운로드 중...')" style="background:none; border:none; color:#0d9488; cursor:pointer; font-size:14px;">📥</button>
+            </div>
+          `).join('');
+        }
+      } catch (e) { console.error('Error in loadEmailAttachments:', e); }
+    }
+
+    function downloadVendorRfqPdf() {
+      const docSheet = document.querySelector('.doc-sheet');
+      if (!docSheet) {
+        toast('견적 제출 페이지에 접속 후 이용하세요.');
+        return;
+      }
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>견적요청서</title>
+        <style>body{margin:0;padding:20px;font-family:'Malgun Gothic',sans-serif;}@media print{body{margin:0;padding:0;}}</style>
+        </head><body>${docSheet.outerHTML}<script>window.onload=function(){window.print();}<\/script></body></html>`;
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+      toast('📥 새 창에서 인쇄/PDF 저장이 열립니다.');
+    }
+
+    function goToLinkLoading() {
+      showScreen('screen-loading');
+      setTimeout(() => {
+        try {
+          const savedItems = localStorage.getItem('rfq_items_for_vendor');
+          if (savedItems) {
+            const parsed = JSON.parse(savedItems);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              ITEMS.length = 0;
+              parsed.forEach(item => ITEMS.push({
+                name: item.name || '',
+                model: item.model || (item.spec || ''),
+                qty: parseInt(item.qty) || 1,
+                unit: item.unit || 'EA',
+                note: item.note || ''
+              }));
+            }
+          }
+        } catch (e) { console.error('Error in goToLinkLoading:', e); }
+
+        showScreen('screen-form');
+        inputState = ITEMS.map((item) => ({ supply: 'ok', price: '', remark: '', remark2: '', vat: '별도', qty: item.qty }));
+
+        const cntEl = document.getElementById('det-item-cnt-v');
+        if (cntEl) cntEl.textContent = ITEMS.length;
+
+        const hasDraft = loadDraft();
+        renderTable();
+        updateStats();
+        renderCheckList();
+
+        if (hasDraft) {
+          calcTotal();
+          toast('💾 임시저장된 내용을 불러왔습니다. 이어서 입력하세요.');
+        }
+
+        const titleEl = document.querySelector('.table-card-title');
+        if (titleEl) titleEl.textContent = `📦 요청 품목 목록 (${ITEMS.length}개)`;
+
+        try {
+          const proj = localStorage.getItem('rfq_project_name');
+          if (proj) {
+            document.querySelectorAll('.doc-sheet td').forEach(td => {
+              if (td.textContent.includes('G022600061')) {
+                td.textContent = proj;
+              }
+            });
+          }
+        } catch (e) { }
+      }, 1000);
+    }
+
+    // localStorage 연동 (buyer에 입력 중 알림)
+    setInterval(() => {
+      if (!isSubmitted && document.getElementById('screen-form').classList.contains('active')) {
+        try { localStorage.setItem('rfq_vendor_typing', JSON.stringify({ vendorId: 'v2', ts: Date.now() })); } catch (e) { }
+      }
+    }, 2000);
+
+
+    /* ════ 화면 전환 ════ */
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      window.scrollTo(0, 0);
+    }
+
+    /* ════ 테이블 렌더 ════ */
+    function renderTable() {
+      document.getElementById('rfq-tbody').innerHTML = ITEMS.map((item, i) => {
+        const s = inputState[i];
+        const isNa = s.supply === 'na';
+        const isAlt = s.supply === 'alt';
+        const isDelay = s.supply === 'delay';
+        const rowClass = isNa ? 'row-na' : isAlt ? 'row-alt' : isDelay ? 'row-delay' : 'row-ok';
+        const price = parseFloat(s.price) || 0;
+        const qty = s.qty || item.qty;
+        let exclTotal = 0;
+        let vatAmount = 0;
+        let inclTotal = 0;
+
+        if (!isNa && price > 0) {
+          if (s.vat === '포함') {
+            inclTotal = price * qty;
+            exclTotal = Math.round(inclTotal / 1.1);
+            vatAmount = inclTotal - exclTotal;
+          } else if (s.vat === '별도') {
+            exclTotal = price * qty;
+            vatAmount = Math.round(exclTotal * 0.1);
+            inclTotal = exclTotal + vatAmount;
+          } else {
+            exclTotal = price * qty;
+            vatAmount = 0;
+            inclTotal = exclTotal;
+          }
+        }
+
+        const supplyBtns = `
+      <div style="display:flex;gap:3px;justify-content:center;">
+        <button onclick="setSupply(${i},'ok')" title="공급가능"
+          style="border:none;cursor:pointer;border-radius:5px;padding:4px 6px;font-size:10px;font-weight:600;
+          background:${s.supply === 'ok' ? '#16a34a' : '#f1f5f9'};color:${s.supply === 'ok' ? '#fff' : '#94a3b8'};transition:all .12s;">
+          ✅ 공급
+        </button>
+        <button onclick="setSupply(${i},'alt')" title="대체제안"
+          style="border:none;cursor:pointer;border-radius:5px;padding:4px 6px;font-size:10px;font-weight:600;
+          background:${s.supply === 'alt' ? '#d97706' : '#f1f5f9'};color:${s.supply === 'alt' ? '#fff' : '#94a3b8'};transition:all .12s;">
+          🔄 대체
+        </button>
+        <button onclick="setSupply(${i},'delay')" title="일시품절"
+          style="border:none;cursor:pointer;border-radius:5px;padding:4px 6px;font-size:10px;font-weight:600;
+          background:${s.supply === 'delay' ? '#3b82f6' : '#f1f5f9'};color:${s.supply === 'delay' ? '#fff' : '#94a3b8'};transition:all .12s;">
+          ⏳ 품절
+        </button>
+        <button onclick="setSupply(${i},'na')" title="공급불가"
+          style="border:none;cursor:pointer;border-radius:5px;padding:4px 6px;font-size:10px;font-weight:600;
+          background:${s.supply === 'na' ? '#dc2626' : '#f1f5f9'};color:${s.supply === 'na' ? '#fff' : '#94a3b8'};transition:all .12s;">
+          ✗ 불가
+        </button>
+      </div>`;
+
+        return `
+    <tr id="tr-${i}" class="${rowClass}">
+      <td class="td-pad" style="text-align:center;color:#94a3b8;font-size:11px;">${i + 1}</td>
+      <td class="td-pad"><strong style="font-size:12px;">${item.name}</strong></td>
+      <td class="td-pad" style="font-size:11px;color:#64748b;">${item.model}</td>
+      <td style="padding:4px 6px;text-align:center;background:#f8fafc;font-weight:600;">
+        ${item.qty}
+      </td>
+      <td style="padding:4px 6px;text-align:center;background:#f0fdfa;">
+        <input type="number" id="qty-${i}" value="${s.qty !== undefined ? s.qty : item.qty}" min="0"
+          oninput="onQtyChange(${i}, this.value)"
+          style="width:58px;text-align:center;font-size:13px;font-weight:700;padding:4px 5px;border:1px solid #0d9488;border-radius:5px;font-family:inherit;color:#0d9488;"
+          ${isSubmitted ? 'readonly' : ''}>
+      </td>
+      <td style="padding:6px 6px;">${supplyBtns}</td>
+      <td class="price-cell" style="padding:5px 6px;">
+        <select id="vat-sel-${i}" style="font-size:11px;padding:4px 6px;border-radius:5px;border:1px solid #e2e8f0;width:100%;" oninput="onVatChange(${i},this.value)">
+          <option value="별도" ${s.vat === '별도' ? 'selected' : ''}>부가세 별도</option>
+          <option value="포함" ${s.vat === '포함' ? 'selected' : ''}>부가세 포함</option>
+          <option value="면세" ${s.vat === '면세' ? 'selected' : ''}>면세</option>
+          <option value="영세" ${s.vat === '영세' ? 'selected' : ''}>영세</option>
+        </select>
+      </td>
+      <td class="price-cell" style="padding:5px 6px;">
+        <input type="number" class="price-input${isNa ? ' na-price' : ''}" id="price-${i}"
+          value="${isNa ? '0' : s.price}"
+          placeholder="${isNa ? '—' : '단가'}"
+          ${isNa ? 'readonly' : ''}
+          min="0"
+          oninput="onPriceInput(${i},this.value)"
+          style="width:100%;font-size:12px;text-align:right; border-radius:5px; border:1px solid #e2e8f0; padding:6px;">
+      </td>
+      <td id="st-excl-${i}" style="font-size:12px;padding:5px 8px;text-align:right; font-family:monospace; color:${price === 0 && !isNa ? '#ef4444' : 'inherit'};">
+        ${price > 0 ? exclTotal.toLocaleString() : (isNa ? '—' : '0')}
+      </td>
+      <td id="st-vat-${i}" style="font-size:12px;padding:5px 8px;text-align:right; font-family:monospace; color:${price === 0 && !isNa ? '#ef4444' : '#64748b'};">
+        ${price > 0 ? vatAmount.toLocaleString() : (isNa ? '—' : '0')}
+      </td>
+      <td id="st-incl-${i}" style="font-size:12px;padding:5px 8px;text-align:right; font-family:monospace; font-weight:700; color:${price === 0 && !isNa ? '#ef4444' : 'inherit'};">
+        ${price > 0 ? inclTotal.toLocaleString() : (isNa ? '—' : '0')}
+      </td>
+      <td style="padding:4px 6px;background:${isAlt ? '#fffbeb' : '#fafcff'};">
+        <input type="text" class="remark-input${isAlt ? ' alt-required' : ''}" id="remark2-${i}"
+          value="${s.remark2}"
+          placeholder="${isAlt ? '⚠ 대체품 정보 필수' : '비고 입력'}"
+          oninput="inputState[${i}].remark2=this.value"
+          style="font-size:11px;padding:6px 8px;background:#fff;border:1px solid #e2e8f0;width:100%;">
+      </td>
+    </tr>`;
+      }).join('');
+    }
+
+    /* ════ 공급상태 변경 ════ */
+    function setSupply(i, val) {
+      inputState[i].supply = val;
+      if (val === 'na') { inputState[i].price = '0'; }
+      renderTable(); // 행 전체 재렌더
+      updateStats();
+      renderCheckList();
+      calcTotal();
+      // 입력 시작 알림
+      try { localStorage.setItem('rfq_vendor_typing', JSON.stringify({ vendorId: 'v2', ts: Date.now() })); } catch (e) { }
+    }
+
+    /* ════ 수량 변경 ════ */
+    function onQtyChange(i, val) {
+      inputState[i].qty = parseInt(val) || 0;
+      onPriceInput(i, inputState[i].price);
+    }
+
+    /* ════ 단가 입력 ════ */
+    function onPriceInput(i, val) {
+      inputState[i].price = val;
+      const item = ITEMS[i];
+      const s = inputState[i];
+      const qty = s.qty || item.qty;
+      const price = parseFloat(val) || 0;
+
+      let exclTotal = 0;
+      let vatAmount = 0;
+      let inclTotal = 0;
+
+      if (s.supply !== 'na' && price > 0) {
+        if (s.vat === '포함') {
+          inclTotal = price * qty;
+          exclTotal = Math.round(inclTotal / 1.1);
+          vatAmount = inclTotal - exclTotal;
+        } else if (s.vat === '별도') {
+          exclTotal = price * qty;
+          vatAmount = Math.round(exclTotal * 0.1);
+          inclTotal = exclTotal + vatAmount;
+        } else {
+          exclTotal = price * qty;
+          vatAmount = 0;
+          inclTotal = exclTotal;
+        }
+      }
+
+      const exclEl = document.getElementById(`st-excl-${i}`);
+      const vatEl = document.getElementById(`st-vat-${i}`);
+      const inclEl = document.getElementById(`st-incl-${i}`);
+
+      if (exclEl) {
+        exclEl.textContent = price > 0 ? exclTotal.toLocaleString() : (s.supply === 'na' ? '—' : '0');
+        exclEl.style.color = (price === 0 && s.supply !== 'na') ? '#ef4444' : 'inherit';
+      }
+      if (vatEl) {
+        vatEl.textContent = price > 0 ? vatAmount.toLocaleString() : (s.supply === 'na' ? '—' : '0');
+        vatEl.style.color = (price === 0 && s.supply !== 'na') ? '#ef4444' : '#64748b';
+      }
+      if (inclEl) {
+        inclEl.textContent = price > 0 ? inclTotal.toLocaleString() : (s.supply === 'na' ? '—' : '0');
+        inclEl.style.color = (price === 0 && s.supply !== 'na') ? '#ef4444' : 'inherit';
+      }
+
+      updateStats();
+      calcTotal();
+      renderCheckList();
+    }
+
+    function onVatChange(i, val) {
+      inputState[i].vat = val;
+      onPriceInput(i, inputState[i].price);
+    }
+
+    /* ════ 합계 계산 ════ */
+    function calcTotal() {
+      let sub = 0;        // 공급가액 합계 (VAT 별도 기준)
+      let totalWithVat = 0; // 부가세 포함 최종합계
+      ITEMS.forEach((item, i) => {
+        const s = inputState[i];
+        if (s.supply === 'na' || !s.price) return;
+        const qty = inputState[i].qty || item.qty;
+        const price = parseFloat(s.price);
+        const lineAmt = price * qty;
+        const vt = s.vat || '별도';
+        if (vt === '포함') {
+          // 입력 단가가 이미 VAT 포함 → 공급가액 = 단가/1.1
+          sub += Math.round(lineAmt / 1.1);
+          totalWithVat += lineAmt;
+        } else if (vt === '면세' || vt === '영세') {
+          // VAT 없음
+          sub += lineAmt;
+          totalWithVat += lineAmt;
+        } else {
+          // 별도 (기본): 공급가액 + VAT 10%
+          sub += lineAmt;
+          totalWithVat += lineAmt;
+        }
+      });
+      const vatAmt = totalWithVat - sub + Math.round(
+        ITEMS.reduce((acc, item, i) => {
+          const s = inputState[i];
+          if (s.supply === 'na' || !s.price) return acc;
+          const qty = inputState[i].qty || item.qty;
+          const vt = s.vat || '별도';
+          if (vt === '별도') return acc + parseFloat(s.price) * qty * 0.1;
+          return acc;
+        }, 0)
+      );
+      const finalTotal = sub + Math.round(
+        ITEMS.reduce((acc, item, i) => {
+          const s = inputState[i];
+          if (s.supply === 'na' || !s.price) return acc;
+          const qty = inputState[i].qty || item.qty;
+          const vt = s.vat || '별도';
+          if (vt === '별도') return acc + parseFloat(s.price) * qty * 0.1;
+          return acc;
+        }, 0)
+      );
+      const fmt = n => n.toLocaleString();
+      ['t-sub', 'r-sub'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = fmt(sub) + '원'; });
+      const vatDisplay = finalTotal - sub;
+      ['t-vat', 'r-vat'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = fmt(vatDisplay) + '원'; });
+      ['t-total', 'r-total2'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = fmt(finalTotal) + '원'; });
+      document.getElementById('h-sub').textContent = fmt(sub);
+      document.getElementById('h-inc').textContent = fmt(finalTotal);
+      return { sub, vat: vatDisplay, total: finalTotal };
+    }
+
+    /* ════ 통계 업데이트 ════ */
+    function updateStats() {
+      const ok = inputState.filter(s => s.supply === 'ok').length;
+      const alt = inputState.filter(s => s.supply === 'alt').length;
+      const na = inputState.filter(s => s.supply === 'na').length;
+      const empty = inputState.filter((s, i) => s.supply !== 'na' && !s.price).length;
+      document.getElementById('cnt-ok').textContent = ok;
+      document.getElementById('cnt-alt').textContent = alt;
+      document.getElementById('cnt-na').textContent = na;
+      document.getElementById('cnt-empty').textContent = empty;
+      const allGood = empty === 0;
+      const info = document.getElementById('bottom-info');
+      if (info) info.innerHTML = allGood
+        ? '✅ 모든 품목 입력 완료 — 최종 제출 버튼을 클릭하세요.'
+        : `단가 미입력: <strong>${empty}개</strong> · 공급불가 제외 품목은 모두 단가를 입력해주세요.`;
+    }
+
+    /* ════ 체크 리스트 ════ */
+    function renderCheckList() {
+      const ok = inputState.filter(s => s.supply === 'ok').length;
+      const alt = inputState.filter(s => s.supply === 'alt').length;
+      const na = inputState.filter(s => s.supply === 'na').length;
+      const empty = inputState.filter((s, i) => s.supply !== 'na' && !s.price).length;
+      const altNoRemark = inputState.filter(s => s.supply === 'alt' && !s.remark2.trim()).length;
+      const checks = [
+        { ok: empty === 0, text: empty === 0 ? `단가 입력 완료 (${ok + alt}개)` : `단가 미입력 ${empty}개 — 공급불가 제외 품목의 단가를 입력해주세요.` },
+        { ok: altNoRemark === 0, text: altNoRemark === 0 ? '대체제안 비고 입력 완료' : `대체제안 비고 미입력 ${altNoRemark}개 — 비고란에 대체품 정보를 기입해주세요.` },
+        { ok: true, text: `공급상태 선택 완료 (공급가능 ${ok}개 / 대체제안 ${alt}개 / 공급불가 ${na}개)` },
+      ];
+      document.getElementById('check-list').innerHTML = checks.map(c =>
+        `<div style="color:${c.ok ? '#16a34a' : '#dc2626'}">${c.ok ? '✅' : '❌'} ${c.text}</div>`
+      ).join('');
+    }
+
+    /* ════ 임시저장 ════ */
+    function saveDraft() {
+      if (isSubmitted) { toast('⚠ 이미 제출된 견적입니다. 임시저장할 수 없습니다.'); return; }
+      try {
+        const draftData = {
+          inputState: JSON.parse(JSON.stringify(inputState)),
+          ts: Date.now()
+        };
+        localStorage.setItem('rfq_draft_v2', JSON.stringify(draftData));
+        // 저장됨 메시지 표시
+        const msg = document.getElementById('draft-saved-msg');
+        if (msg) {
+          msg.style.opacity = '1';
+          setTimeout(() => { msg.style.opacity = '0'; }, 2000);
+        }
+        toast('💾 임시저장 완료! 나중에 다시 접속하면 이어서 입력할 수 있습니다.');
+      } catch (e) {
+        toast('⚠ 임시저장 실패. 브라우저 저장공간을 확인해주세요.');
+      }
+    }
+
+    function loadDraft() {
+      try {
+        const raw = localStorage.getItem('rfq_draft_v2');
+        if (!raw) return false;
+        const draft = JSON.parse(raw);
+        if (!draft || !draft.inputState) return false;
+        // 저장된 시간 확인 (7일 이내)
+        const ageDays = (Date.now() - draft.ts) / (1000 * 60 * 60 * 24);
+        if (ageDays > 7) {
+          localStorage.removeItem('rfq_draft_v2');
+          return false;
+        }
+        // inputState 복원
+        draft.inputState.forEach((s, i) => {
+          if (inputState[i]) {
+            inputState[i].supply = s.supply || 'ok';
+            inputState[i].price = s.price || '';
+            inputState[i].remark = s.remark || '';
+            inputState[i].remark2 = s.remark2 || '';
+            inputState[i].vat = s.vat || '별도';
+            inputState[i].qty = s.qty || (ITEMS[i] ? ITEMS[i].qty : 1);
+          }
+        });
+        return true;
+      } catch (e) { return false; }
+    }
+
+    /* ════ 최종 제출 ════ */
+    function submitQuote() {
+      // 유효성 검사
+      const empty = inputState.filter((s, i) => s.supply !== 'na' && !s.price);
+      if (empty.length > 0) { toast(`⚠ 단가를 입력하지 않은 품목이 ${empty.length}개 있습니다.`); return; }
+      const altNoRemark = inputState.filter(s => s.supply === 'alt' && !s.remark2.trim());
+      if (altNoRemark.length > 0) { toast(`⚠ 대체제안 품목의 비고란에 대체품 정보를 입력해주세요.`); return; }
+
+      isSubmitted = true;
+
+      // 결과 집계
+      const ok = inputState.filter(s => s.supply === 'ok').length;
+      const alt = inputState.filter(s => s.supply === 'alt').length;
+      const na = inputState.filter(s => s.supply === 'na').length;
+      const { sub, vat, total } = calcTotal();
+
+      // localStorage 연동
+      try {
+        localStorage.setItem('rfq_vendor_reply', JSON.stringify({
+          vendorId: 'v2', subtotal: sub, supply_na: na, supply_alt: alt, ts: Date.now()
+        }));
+      } catch (e) { }
+
+      // 완료 화면 세팅
+      const now = new Date();
+      const timeStr = now.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      document.getElementById('done-time').textContent = timeStr;
+      document.getElementById('r-ok').textContent = ok;
+      document.getElementById('r-alt').textContent = alt;
+      document.getElementById('r-na').textContent = na;
+      document.getElementById('r-total').textContent = total.toLocaleString() + '원';
+
+      // 읽기전용 테이블 렌더
+      renderReadonlyTable();
+      const globalRemark = document.getElementById('global-reply-remark').value;
+      document.getElementById('r-global-reply-remark').textContent = globalRemark || '—';
+
+      showScreen('screen-done');
+      toast('✅ 견적이 최종 제출되었습니다. 구매담당자에게 자동 알림이 전송됩니다.');
+    }
+
+    /* ════ 읽기전용 테이블 ════ */
+    function renderReadonlyTable() {
+      document.getElementById('readonly-tbody').innerHTML = ITEMS.map((item, i) => {
+        const s = inputState[i];
+        const isNa = s.supply === 'na';
+        const isAlt = s.supply === 'alt';
+        const isDelay = s.supply === 'delay';
+        const price = isNa ? 0 : (parseFloat(s.price) || 0);
+        const subtotal = price * item.qty;
+        const supplyBadge = isNa
+          ? '<span class="badge badge-na">공급불가</span>'
+          : isAlt
+            ? '<span class="badge badge-alt">대체제안</span>'
+            : isDelay
+              ? '<span class="badge badge-blue" style="background:#eff6ff;color:#2563eb;">일시품절</span>'
+              : '<span class="badge badge-ok">공급가능</span>';
+        const rowBg = isNa ? '#fff8f8' : isAlt ? '#fffef0' : isDelay ? '#f0f7ff' : '';
+        return `
+    <tr style="${rowBg ? 'background:' + rowBg : ''}">
+      <td class="td-pad" style="text-align:center;color:#94a3b8;font-size:11px;">${i + 1}</td>
+      <td class="td-pad"><strong style="font-size:12px;">${item.name}</strong></td>
+      <td class="td-pad" style="font-size:11px;color:#64748b;">${item.model}</td>
+      <td style="padding:4px 6px;text-align:center;">
+        <input type="number" id="qty-${i}" value="${item.qty}" min="1"
+          oninput="onQtyChange(${i}, this.value)"
+          style="width:58px;text-align:center;font-size:12px;padding:4px 5px;border:1px solid #e2e8f0;border-radius:5px;font-family:inherit;"
+          ${isSubmitted ? 'readonly' : ''}>
+        <div style="font-size:10px;color:#94a3b8;margin-top:1px;">${item.unit}</div>
+      </td>
+      <td class="td-pad">${supplyBadge}</td>
+      <td class="td-pad font-mono" style="text-align:right;font-size:12px;${isNa ? 'color:#94a3b8;' : ''}">
+        ${isNa ? '—' : (price ? price.toLocaleString() + '원' : '미입력')}
+      </td>
+      <td class="subtotal-cell${subtotal > 0 ? ' has-value' : ''}">
+        ${isNa ? '—' : (subtotal > 0 ? subtotal.toLocaleString() + '원' : '—')}
+      </td>
+      <td style="padding:5px 8px;font-size:11px;color:#374151;">
+        ${s.remark2 || '—'}
+      </td>
+    </tr>`;
+      }).join('');
+      calcTotal(); // 읽기전용 합계도 업데이트
+    }
+
+    function scrollTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+
+    /* ════ 토스트 ════ */
+    let toastT;
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastT);
+      toastT = setTimeout(() => el.classList.remove('show'), 3800);
+    }
+
+    /* 초기화 */
+    window.addEventListener('DOMContentLoaded', () => {
+      // ── 시뮬레이션용: 첨부파일 더미 데이터 초기 세팅 (없을 때만) ──
+      try {
+        if (!localStorage.getItem('rfq_attach_files')) {
+          const dummyFiles = [
+            { name: '2026_통신경상자재_구매사양서.pdf', size: 245760, type: 'application/pdf' },
+            { name: '자재검수기준_별첨.xlsx', size: 81920, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+          ];
+          localStorage.setItem('rfq_attach_files', JSON.stringify(dummyFiles));
+        }
+      } catch (e) { }
+
+      // ── localStorage에서 buyer가 보낸 품목 복원 ──
+      try {
+        const savedItems = localStorage.getItem('rfq_items_for_vendor');
+        const savedProject = localStorage.getItem('rfq_project_name');
+        const savedVendors = localStorage.getItem('rfq_vendor_targets');
+        const sentTs = localStorage.getItem('rfq_sent_ts');
+
+        if (savedItems && sentTs) {
+          // 최근 24시간 이내 발송 건만 적용 (오래된 localStorage 데이터 무시)
+          const sentAge = Date.now() - parseInt(sentTs);
+          const isRecent = sentAge < 24 * 60 * 60 * 1000;
+          const parsed = JSON.parse(savedItems);
+          if (isRecent && Array.isArray(parsed) && parsed.length > 0) {
+            ITEMS.length = 0;
+            parsed.forEach(item => ITEMS.push({
+              name: item.name || '',
+              model: item.model || (item.spec || ''),
+              qty: parseInt(item.qty) || 1,
+              unit: item.unit || 'EA',
+              note: item.note || ''
+            }));
+          }
+
+          const rfqNo = localStorage.getItem('rfq_no') || 'RFQP-2026-0091';
+
+          // 이메일 리스트 항목 업데이트
+          if (savedProject) {
+            const subjectEl = document.querySelector('#email-rfq .email-subject');
+            if (subjectEl) subjectEl.textContent = `📋 [견적요청] ${rfqNo} — ${savedProject}`;
+
+            // 메일 뷰어 헤더 업데이트
+            const viewerSubjectEl = document.querySelector('.email-viewer-subject');
+            if (viewerSubjectEl) viewerSubjectEl.textContent = `📋 [견적요청] ${rfqNo} — ${savedProject} (㈜한솔무역)`;
+
+            // 메일 본문 건명 업데이트
+            const bodyProjectEl = document.querySelector('.email-viewer-body table tr:first-child td:last-child');
+            if (bodyProjectEl) bodyProjectEl.textContent = savedProject;
+
+            // 폼 헤더 서브타이틀 업데이트
+            const subEl = document.querySelector('.form-header-left .sub');
+            if (subEl) subEl.textContent = `(주)네오비에이치 구매팀 · ${rfqNo} · ${savedProject}`;
+
+            // 완료 화면 서브타이틀 업데이트
+            const doneSubEl = document.querySelector('.complete-sub');
+            if (doneSubEl) doneSubEl.textContent = `㈜한솔무역 · ${rfqNo} · ${savedProject}`;
+          }
+
+          if (savedVendors) {
+            const itemCount = ITEMS.length;
+            const countEl = document.querySelector('.email-viewer-body table tr:nth-child(2) td:last-child');
+            if (countEl) countEl.textContent = `${itemCount}개 품목`;
+          }
+        }
+      } catch (e) { }
+
+      inputState = ITEMS.map((item) => ({ supply: 'ok', price: '', remark: '', remark2: '', vat: '별도', qty: item.qty }));
+      renderTable();
+      updateStats();
+      renderCheckList();
+
+      // direct=1 파라미터가 있으면 이메일 화면 건너뛰고 바로 입력 폼으로 이동
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('direct') === '1') {
+        goToLinkLoading();
+      }
+    });
+
+    function toggleHeaderAttach() {
+      const section = document.getElementById('form-attach-section');
+      if (section.style.display === 'none' || section.style.display === '') {
+        section.style.display = 'block';
+        toast('📎 첨부파일 목록이 상단에 표시됩니다.');
+      } else {
+        section.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+
+</html>
